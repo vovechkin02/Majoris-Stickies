@@ -235,3 +235,25 @@ test(
          meson.project_source_root() / 'tests/integration', '-p', 'test_store_session_lock.py'],
   suite: 'integration',
 )
+
+# Stage 9.4 text/PDF reading and portable nested-list compatibility.
+stage9_4_unit_executable = executable(
+  'test-stage9-4',
+  [core_sources, files('unit/test-stage9-4.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 9.4 nested-list tokens', stage9_4_unit_executable, suite: 'unit')
+
+foreach case_name : [
+  'test_stage9_4_pdf_text.py',
+  'test_stage9_4_list_interchange.py',
+]
+  test(
+    'Stage 9.4 ' + case_name,
+    python,
+    args: ['-m', 'unittest', 'discover', '-s',
+           meson.project_source_root() / 'tests/integration', '-p', case_name],
+    suite: 'integration',
+  )
+endforeach

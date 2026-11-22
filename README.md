@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.3 (coordination and editor completion; native release gate pending)  
+**Version:** 0.9.4 (editor and document reading enhancements; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,33 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.4 — Editor and PDF reading completion
+
+- **Optional local spell checking:** GtkSourceView 5 and libspelling provide
+  spelling underlines and context-menu corrections for notes when both SDKs are
+  installed. `-Dspellcheck=disabled` retains the existing GTK editor without
+  new dependencies; the spelling adapter is UI-only and not serialized in notes.
+  The dictionary is provided by the system, not downloaded by Stickies.
+- **PDF text:** PDF attachment cards offer Copy First Page Text. When Majoris
+  Image is installed, the PDF page navigator also offers Copy Page Text for
+  the displayed page. A separate bounded Poppler helper validates the original
+  regular PDF, pins its inode against path replacement, limits output to 1 MiB
+  and does not OCR, edit or render images. Scanned PDFs without embedded text
+  therefore cannot provide selectable text through this action.
+- **Nested lists:** Six levels of indentation now have explicit `list-depth-N`
+  formatting spans as well as portable leading spaces. They survive SQLite,
+  the Majoris sharing format, and the native RTFD manifest; regular RTF exports
+  remain intentionally text-first and may lose this additional structure.
+  Indented checklist markers can now be clicked and toggled.
+- **First-line titles:** Untitled notes derive their title from their first
+  nonempty line (bounded to 80 characters), updating until the title field is
+  manually edited. No new database field or schema migration is needed.
+- **Compatibility:** SQLite schema v5 and existing note/attachment identities
+  are unchanged. ImageKit remains responsible for image display.
+
+The Stage 9.4 native and integration checklist is in
+[`docs/stage-9-4-qualification.md`](docs/stage-9-4-qualification.md).
 
 ## v0.9.3 — Store coordination and editor completion
 

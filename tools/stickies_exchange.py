@@ -105,6 +105,7 @@ def _style_supported(style: str) -> bool:
         *(f"size-{point}" for point in (10, 12, 14, 16, 18, 20, 24)),
         "text-red", "text-blue", "text-green", "align-left", "align-center",
         "align-right", "list-bullet", "list-numbered", "list-checklist",
+        *(f"list-depth-{depth}" for depth in range(1, 7)),
     }
     if style in fixed or RGB_STYLE.fullmatch(style):
         return True

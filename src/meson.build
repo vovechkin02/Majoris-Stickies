@@ -4,6 +4,7 @@ core_sources = files(
   'core/note-formatting.vala',
   'core/note-palette.vala',
   'core/note-repository.vala',
+  'core/note-title.vala',
   'core/note-transfer.vala',
   'core/source-link.vala',
   'core/text-style-format.vala',
@@ -22,6 +23,7 @@ gtk_sources = files(
 service_sources = files(
   'services/note-defaults.vala',
   'services/pdf-preview-service.vala',
+  'services/pdf-text-service.vala',
   'services/rtf-exporter.vala',
   'services/rtf-importer.vala',
   'services/rtfd-transfer.vala',

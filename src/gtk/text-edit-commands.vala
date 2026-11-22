@@ -41,7 +41,20 @@ namespace Stickies {
                         buffer.end_user_action ();
                         return;
                 }
-                buffer.insert (ref position, prefix, -1);
+                // Keep indentation before the marker so nested items stay
+                // readable in plain-text exports and on older installations.
+                var insertion = position;
+                int leading_spaces = 0;
+                while (leading_spaces < 24 && !insertion.ends_line ()) {
+                    var next = insertion;
+                    next.forward_char ();
+                    if (buffer.get_text (insertion, next, false) != " ") {
+                        break;
+                    }
+                    insertion = next;
+                    leading_spaces++;
+                }
+                buffer.insert (ref insertion, prefix, -1);
                 Gtk.TextIter paragraph_start;
                 buffer.get_iter_at_line (out paragraph_start, line);
                 var paragraph_end = paragraph_start;
@@ -50,6 +63,7 @@ namespace Stickies {
                 if (kind_tag != null) {
                     buffer.apply_tag (kind_tag, paragraph_start, paragraph_end);
                 }
+                mark_list_depth (buffer, line);
             }
             buffer.end_user_action ();
         }
@@ -112,6 +126,7 @@ namespace Stickies {
                 if (tag != null) {
                     buffer.apply_tag (tag, start, cursor);
                 }
+                mark_list_depth (buffer, cursor.get_line ());
             }
             buffer.end_user_action ();
             return true;
@@ -138,29 +153,82 @@ namespace Stickies {
                 Gtk.TextIter position;
                 buffer.get_iter_at_line (out position, line);
                 if (!outdent) {
-                    buffer.insert (ref position, "    ", -1);
-                    continue;
-                }
-                var end_of_indent = position;
-                int length = 0;
-                while (length < 4 && !end_of_indent.ends_line ()) {
-                    var next = end_of_indent;
-                    next.forward_char ();
-                    var symbol = buffer.get_text (end_of_indent, next, false);
-                    if (symbol != " ") {
-                        if (length == 0 && symbol == "\t") {
-                            end_of_indent = next;
+                    // List hierarchy is bounded to six indentation levels.
+                    var leading = position;
+                    int spaces = 0;
+                    while (spaces < 24 && !leading.ends_line ()) {
+                        var next = leading;
+                        next.forward_char ();
+                        if (buffer.get_text (leading, next, false) != " ") {
+                            break;
                         }
-                        break;
+                        spaces++;
+                        leading = next;
                     }
-                    end_of_indent = next;
-                    length++;
+                    if (spaces < 24) {
+                        buffer.insert (ref position, "    ", -1);
+                    }
+                } else {
+                    var end_of_indent = position;
+                    int length = 0;
+                    while (length < 4 && !end_of_indent.ends_line ()) {
+                        var next = end_of_indent;
+                        next.forward_char ();
+                        var symbol = buffer.get_text (end_of_indent, next, false);
+                        if (symbol != " ") {
+                            if (length == 0 && symbol == "\t") {
+                                end_of_indent = next;
+                            }
+                            break;
+                        }
+                        end_of_indent = next;
+                        length++;
+                    }
+                    if (end_of_indent.get_offset () > position.get_offset ()) {
+                        buffer.delete (ref position, ref end_of_indent);
+                    }
                 }
-                if (end_of_indent.get_offset () > position.get_offset ()) {
-                    buffer.delete (ref position, ref end_of_indent);
-                }
+                mark_list_depth (buffer, line);
             }
             buffer.end_user_action ();
+        }
+
+        /**
+         * Synchronizes bounded nested-list metadata with a paragraph's text.
+         *
+         * Normal indentation remains plain text; only actual list paragraphs
+         * carry the depth marker for native, RTFD, and share interchange.
+         */
+        private static void mark_list_depth (Gtk.TextBuffer buffer, int line) {
+            Gtk.TextIter first;
+            buffer.get_iter_at_line (out first, line);
+            var last = first;
+            last.forward_to_line_end ();
+            var content = buffer.get_text (first, last, false);
+            int spaces = 0;
+            while (spaces < content.length && spaces < 24 &&
+                content[spaces] == ' ') {
+                spaces++;
+            }
+            var text = content.substring (spaces);
+            bool list_item = text.has_prefix ("• ") || text.has_prefix ("☐ ") ||
+                text.has_prefix ("☑ ");
+            if (!list_item) {
+                int marker = text.index_of (". ");
+                int parsed;
+                list_item = marker > 0 && marker <= 7 &&
+                    int.try_parse (text.substring (0, marker), out parsed) &&
+                    parsed >= 1;
+            }
+            for (int depth = 1; depth <= 6; depth++) {
+                var tag = buffer.tag_table.lookup ("list-depth-%d".printf (depth));
+                if (tag != null) {
+                    buffer.remove_tag (tag, first, last);
+                    if (list_item && spaces / 4 == depth) {
+                        buffer.apply_tag (tag, first, last);
+                    }
+                }
+            }
         }
 
         /** Toggles the checkbox at the cursor or starts a new checklist item. */
@@ -173,17 +241,31 @@ namespace Stickies {
             if (!end.ends_line ()) {
                 end.forward_to_line_end ();
             }
-            var current = buffer.get_text (start, end, false);
+            // A nested checklist marker begins after its leading indentation.
+            var marker_start = start;
+            int leading_spaces = 0;
+            while (leading_spaces < 24 && !marker_start.ends_line ()) {
+                var next = marker_start;
+                next.forward_char ();
+                if (buffer.get_text (marker_start, next, false) != " ") {
+                    break;
+                }
+                marker_start = next;
+                leading_spaces++;
+            }
+            var current = buffer.get_text (marker_start, end, false);
+            int line = position.get_line ();
             buffer.begin_user_action ();
             if (current.has_prefix ("☐ ") || current.has_prefix ("☑ ")) {
-                var symbol_end = start;
+                var symbol_end = marker_start;
                 symbol_end.forward_char ();
                 var replacement = current.has_prefix ("☐ ") ? "☑" : "☐";
-                buffer.delete (ref start, ref symbol_end);
-                buffer.insert (ref start, replacement, -1);
+                buffer.delete (ref marker_start, ref symbol_end);
+                buffer.insert (ref marker_start, replacement, -1);
             } else {
-                buffer.insert (ref start, "☐ ", -1);
+                buffer.insert (ref marker_start, "☐ ", -1);
             }
+            mark_list_depth (buffer, line);
             buffer.end_user_action ();
         }
 

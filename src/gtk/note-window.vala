@@ -59,6 +59,7 @@ namespace Stickies {
         private Gee.ArrayList<GLib.File> pdf_previews;
         private bool is_syncing_view = false;
         private uint64 editor_revision = 0;
+        private bool title_follows_first_line = false;
         private string current_color = "";
         private string last_rendered_formatting = "";
         private Gtk.Button? pin_button;
@@ -66,6 +67,9 @@ namespace Stickies {
         private Gtk.Button? float_button;
         private Gtk.Button? translucent_button;
         private Gtk.Window? find_window;
+#if HAVE_SPELLING
+        private Spelling.TextBufferAdapter? spelling_adapter;
+#endif
 
         /** Constructs the independent editor without leaking storage operations into GTK. */
         public NoteWindow (StickiesApp owner, NoteRepository repository, Note note) {
@@ -73,8 +77,21 @@ namespace Stickies {
             this.owner = owner;
             this.repository = repository;
             this.note = note;
+            title_follows_first_line = note.title == "Untitled Note" ||
+                note.title == NoteTitle.derive (note.content);
             attachment_cancellable = new GLib.Cancellable ();
             pdf_previews = new Gee.ArrayList<GLib.File> ();
+#if HAVE_SPELLING
+            // Keep spelling state separate from the serialized rich-text tags.
+            var source_buffer = new GtkSource.Buffer (null);
+            body_view.buffer = source_buffer;
+            spelling_adapter = new Spelling.TextBufferAdapter (
+                source_buffer, Spelling.Checker.get_default ()
+            );
+            body_view.set_extra_menu (spelling_adapter.get_menu_model ());
+            body_view.insert_action_group ("spelling", spelling_adapter);
+            spelling_adapter.set_enabled (true);
+#endif
             RichTextCodec.prepare (body_view.buffer);
             inline_images = new InlineImageController (
                 body_view, attachment_cancellable
@@ -293,6 +310,14 @@ namespace Stickies {
                 popover.popdown ();
                 choose_text_color ();
             });
+#if HAVE_SPELLING
+            menu_item (menu, "Toggle Spell Checking", () => {
+                if (spelling_adapter != null) {
+                    spelling_adapter.set_enabled (!spelling_adapter.get_enabled ());
+                }
+                popover.popdown ();
+            });
+#endif
             menu_item (menu, "Find and Replace…", () => {
                 popover.popdown ();
                 choose_find_replace ();
@@ -805,6 +830,7 @@ namespace Stickies {
         /** Sends title changes without issuing SQL writes per key press. */
         private void on_title_changed () {
             if (!is_syncing_view) {
+                title_follows_first_line = false;
                 editor_revision++;
                 repository.set_title (note.id, title_entry.text);
             }
@@ -895,11 +921,25 @@ namespace Stickies {
                     open_clicked_link (position);
                     return;
                 }
-                if (position.get_line_offset () > 1) {
+                if (position.get_line_offset () > 25) {
                     return;
                 }
                 var start = position;
                 start.set_line_offset (0);
+                int indent = 0;
+                while (indent < 24 && !start.ends_line ()) {
+                    var next = start;
+                    next.forward_char ();
+                    if (body_view.buffer.get_text (start, next, false) != " ") {
+                        break;
+                    }
+                    start = next;
+                    indent++;
+                }
+                if (position.get_line_offset () < indent ||
+                    position.get_line_offset () > indent + 1) {
+                    return;
+                }
                 var end = start;
                 if (!end.forward_char ()) {
                     return;
@@ -920,6 +960,11 @@ namespace Stickies {
             if (!is_syncing_view) {
                 editor_revision++;
                 persist_editor_body ();
+                // Only untouched/previously auto-derived titles follow the body.
+                // Manual title edits explicitly stop this behavior.
+                if (title_follows_first_line) {
+                    repository.set_title (note.id, NoteTitle.derive (editor_text ()));
+                }
             }
         }
 
@@ -1384,6 +1429,16 @@ namespace Stickies {
                         }
                     });
                     row.append (remove_button);
+                    if (attachment.mime_type == "application/pdf") {
+                        var copy_page = new Gtk.Button.from_icon_name (
+                            "edit-copy-symbolic"
+                        );
+                        copy_page.tooltip_text = "Copy text from the first PDF page";
+                        copy_page.clicked.connect (() => {
+                            copy_pdf_page_text.begin (attachment, 1);
+                        });
+                        row.append (copy_page);
+                    }
                     attachments_box.append (row);
 #if HAVE_IMAGEKIT
                     if (attachment.is_image () || attachment.mime_type == "application/pdf") {
@@ -1421,12 +1476,20 @@ namespace Stickies {
                             navigation.append (following);
                             navigation.append (zoom_out);
                             navigation.append (zoom_in);
+                            var copy_text = new Gtk.Button.with_label ("Copy Page Text");
+                            copy_text.tooltip_text = "Copy text from the displayed PDF page";
+                            navigation.append (copy_text);
                             layout.append (navigation);
                             layout.append (viewer);
                             expander.set_child (layout);
                             int shown_page = 0;
                             int zoom_edge = 640;
                             bool loading_page = false;
+                            copy_text.clicked.connect (() => {
+                                if (shown_page >= 1 && !loading_page) {
+                                    copy_pdf_page_text.begin (attachment, shown_page);
+                                }
+                            });
                             previous.clicked.connect (() => {
                                 if (loading_page || shown_page <= 1) {
                                     return;
@@ -1565,6 +1628,30 @@ namespace Stickies {
             }
         }
 #endif
+
+        /** Copies user-requested PDF text without modifying the stored note or PDF. */
+        private async void copy_pdf_page_text (NoteAttachment attachment, int page) {
+            try {
+                var text = yield PdfTextService.extract_page (
+                    GLib.File.new_for_path (attachment.path), page, attachment_cancellable
+                );
+                if (attachment_cancellable.is_cancelled ()) {
+                    return;
+                }
+                if (text.strip () == "") {
+                    show_status ("This PDF page has no selectable text");
+                    return;
+                }
+                get_clipboard ().set_text (text);
+                show_status ("PDF page text copied");
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                if (!attachment_cancellable.is_cancelled ()) {
+                    show_save_failure ("PDF text unavailable: " + error.message);
+                }
+            }
+        }
 
         /** Opens the original copy in the user's default external application. */
         private void open_attachment (NoteAttachment attachment) {

@@ -46,6 +46,12 @@ namespace Stickies {
                 case "list-bullet":
                 case "list-numbered":
                 case "list-checklist":
+                case "list-depth-1":
+                case "list-depth-2":
+                case "list-depth-3":
+                case "list-depth-4":
+                case "list-depth-5":
+                case "list-depth-6":
                     return true;
                 default:
                     return false;

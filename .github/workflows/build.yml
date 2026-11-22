@@ -16,7 +16,8 @@ jobs:
             ca-certificates git build-essential meson ninja-build valac python3 \
             debhelper dpkg-dev pkgconf xvfb xauth dbus-x11 \
             libglib2.0-dev libgee-0.8-dev libgtk-4-dev libadwaita-1-dev \
-            libsqlite3-dev nodejs poppler-utils desktop-file-utils
+            libsqlite3-dev libgtksourceview-5-dev libspelling-1-dev \
+            hunspell-en-us nodejs poppler-utils desktop-file-utils
       - name: Check out source
         uses: actions/checkout@v4
       - name: Release metadata and native prerequisite preflight
@@ -24,11 +25,24 @@ jobs:
           python3 tools/release_preflight.py --require-native
           desktop-file-validate data/com.majoris.stickies.desktop
       - name: Configure
-        run: meson setup build -Dwarning_level=3 -Dimagekit=disabled
+        run: meson setup build -Dwarning_level=3 -Dimagekit=disabled -Dspellcheck=enabled
       - name: Compile
         run: meson compile -C build
+      - name: Build without optional spell checking
+        run: |
+          meson setup build-minimal -Dwarning_level=3 -Dimagekit=disabled -Dspellcheck=disabled
+          meson compile -C build-minimal
       - name: Run tests
         run: meson test -C build --print-errorlogs
+      - name: Check ImageKit-enabled variant when its SDK is installed
+        run: |
+          if pkg-config --exists majoris-image-gtk4-1; then
+            meson setup build-imagekit -Dwarning_level=3 -Dimagekit=enabled -Dspellcheck=enabled
+            meson compile -C build-imagekit
+            meson test -C build-imagekit --print-errorlogs
+          else
+            echo 'ImageKit SDK absent: enabled build remains unqualified on this runner'
+          fi
       - name: Static documentation coverage
         run: python3 tools/check_source_docs.py
       - name: Backup and recovery tests

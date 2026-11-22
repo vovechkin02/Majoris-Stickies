@@ -1,3 +1,14 @@
+majoris-stickies (0.9.4-1) unstable; urgency=medium
+
+  * Add optional local spell checking through GtkSourceView 5 and libspelling.
+  * Add bounded PDF page text extraction and explicit clipboard copy via Poppler.
+  * Preserve six levels of nested-list metadata in notes, HTML and sharing.
+  * Derive first-line titles until a note title is manually edited.
+  * Keep SQLite schema v5 and the Majoris Image renderer integration.
+  * Native Vala, GTK/GNOME Wayland and ImageKit qualification remain pending.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 06:50:00 +1100
+
 majoris-stickies (0.9.3-1) unstable; urgency=medium
 
   * Coordinate GTK application sessions and offline imports/sync with one

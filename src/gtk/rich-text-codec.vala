@@ -15,7 +15,9 @@ namespace Stickies {
                 "size-10", "size-12", "size-14", "size-16", "size-18", "size-20",
                 "size-24", "text-red", "text-blue", "text-green",
                 "align-left", "align-center", "align-right",
-                "list-bullet", "list-numbered", "list-checklist"
+                "list-bullet", "list-numbered", "list-checklist",
+                "list-depth-1", "list-depth-2", "list-depth-3",
+                "list-depth-4", "list-depth-5", "list-depth-6"
             };
         }
 
@@ -77,6 +79,13 @@ namespace Stickies {
                 "list-bullet", "list-numbered", "list-checklist"
             }) {
                 buffer.tag_table.add (new Gtk.TextTag (kind));
+            }
+            // List depth is persisted as paragraph metadata. The visible
+            // indentation remains ordinary text for legacy plain-text readers.
+            for (int depth = 1; depth <= 6; depth++) {
+                buffer.tag_table.add (new Gtk.TextTag (
+                    "list-depth-%d".printf (depth)
+                ));
             }
             buffer.enable_undo = true;
         }

@@ -274,6 +274,11 @@ namespace Stickies {
             if (InlineImageFormat.parse (style, out attachment_id, out image_width)) {
                 return "<span data-note-inline-image=\"true\">";
             }
+            for (int depth = 1; depth <= 6; depth++) {
+                if (style == "list-depth-%d".printf (depth)) {
+                    return "<span data-note-list-depth=\"%d\">".printf (depth);
+                }
+            }
             switch (style) {
                 case "list-bullet":
                     return "<span data-note-list=\"bullet\">";

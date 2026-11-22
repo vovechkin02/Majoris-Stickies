@@ -10,3 +10,10 @@ option(
   value: false,
   description: 'Install optional, compositor-specific GNOME Shell integration',
 )
+
+option(
+  'spellcheck',
+  type: 'feature',
+  value: 'auto',
+  description: 'Enable local libspelling correction suggestions when available',
+)

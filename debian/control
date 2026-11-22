@@ -12,6 +12,8 @@ Build-Depends: debhelper-compat (= 13),
                libadwaita-1-dev (>= 1.5),
                libgee-0.8-dev (>= 0.20),
                libsqlite3-dev,
+               libgtksourceview-5-dev,
+               libspelling-1-dev,
                python3
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
@@ -20,7 +22,7 @@ Package: majoris-stickies
 Architecture: any
 Depends: ${misc:Depends}, ${shlibs:Depends}, python3
 Recommends: xdg-desktop-portal-gnome, gnome-shell-extension-majoris-stickies,
-            poppler-utils, libnotify-bin, dbus-bin
+            poppler-utils, libnotify-bin, dbus-bin, hunspell-en-us
 Description: Native desktop sticky notes for Majoris OS
  Stickies provides local-first colored desktop notes, rich-text editing,
  screenshot capture, reminders, handwriting, RTF import/export and HTML sharing,

@@ -50,7 +50,9 @@ class RtfExportError(Exception):
 
 def _dynamic_style(style: str) -> bool:
     """Validate bounded rich-text tokens before generating dynamic RTF tables."""
-    if style in {"list-bullet", "list-numbered", "list-checklist"}:
+    if style in {"list-bullet", "list-numbered", "list-checklist"} or style in {
+        f"list-depth-{depth}" for depth in range(1, 7)
+    }:
         return True
     if re.fullmatch(r"point_([0-9]{1,2})", style):
         value = int(style[6:])

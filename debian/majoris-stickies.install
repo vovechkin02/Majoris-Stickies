@@ -14,3 +14,4 @@ usr/lib/systemd/user/majoris-stickies-reminders.timer
 usr/bin/majoris-stickies-auto-sync
 usr/lib/systemd/user/majoris-stickies-auto-sync.service
 usr/lib/systemd/user/majoris-stickies-auto-sync.timer
+usr/bin/majoris-stickies-pdf-text
