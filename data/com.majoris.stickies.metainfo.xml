@@ -9,6 +9,8 @@
     <p>Stickies combines a searchable notes manager with independent, richly formatted desktop notes, local image/PDF attachments, and optional GNOME Shell window arrangements.</p>
   </description>
   <releases>
+    <release version="0.7.0" date="2026-11-22" />
+    <release version="0.6.0" date="2026-11-22" />
     <release version="0.5.0" date="2026-11-22" />
   </releases>
   <launchable type="desktop-id">com.majoris.stickies.desktop</launchable>

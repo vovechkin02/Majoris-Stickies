@@ -288,3 +288,23 @@ compositor-wide transparency, all-workspace sticky windows, custom colors and
 unrestricted fonts remain out of scope for this actual implementation. This
 repository must not be represented as fully parity-complete before those
 features and native qualification are delivered.
+
+## Stage 7 — Interchange and native release boundaries
+
+- `tools/stickies_rtf.py` is a narrowly scoped read-only RTF serializer, not
+  a general interchange engine. The GTK-facing `RtfExporter` initiates it
+  asynchronously **after** flushing the active note, without embedding file
+  I/O and RTF escaping inside `NoteWindow`. The output uses escaped ASCII,
+  Unicode UTF-16 fallback controls, balanced groups, bounded style intervals,
+  and exclusive file creation. It does not decode attachments or change SQLite.
+- The helper-process boundary is an ordinary integration adapter; it is **not**
+  falsely classified as GoF Proxy or Strategy. The app still owns the note and
+  the note repository still owns persistence. Cancellables bound the child
+  wait; the helper validates its local inputs independently.
+- Existing note and share identities, file paths, SQLite schema v5, and
+  attachment format are unchanged. Majoris Image remains the optional image
+  renderer; no alternative image decoder has been introduced.
+- The Debian 13 CI job now requires native compilation, unit/integration tests,
+  an Xvfb activation smoke run, and binary package construction. Failure of any
+  gate must prevent tagging a build-qualified release. The GNOME Shell and
+  native HDR/Wayland/ImageKit runtime paths require a target desktop session.

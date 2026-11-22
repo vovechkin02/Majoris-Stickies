@@ -14,6 +14,7 @@ jobs:
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates git build-essential meson ninja-build valac python3 \
+            debhelper dpkg-dev pkgconf xvfb xauth dbus-x11 \
             libglib2.0-dev libgee-0.8-dev libgtk-4-dev libadwaita-1-dev \
             libsqlite3-dev nodejs
       - name: Check out source
@@ -30,7 +31,12 @@ jobs:
         run: python3 -m unittest discover -s tests/recovery -p 'test_*.py'
       - name: Native build and install staging
         run: meson install -C build --destdir "$PWD/stage"
+      - name: GTK startup and single-instance activation under Xvfb
+        run: xvfb-run -a dbus-run-session -- python3 tools/smoke_gui.py build/src/majoris-stickies
+      - name: Debian binary packages
+        run: dpkg-buildpackage -b -us -uc
       - name: Shell JavaScript validation
         run: |
           node --check shell/majoris-stickies@majoris.org/extension.js
           node --experimental-default-type=module tests/integration/test_layout.mjs
+          python3 -m unittest discover -s tests/integration -p 'test_stage7_*.py'

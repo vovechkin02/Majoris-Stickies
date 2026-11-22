@@ -291,7 +291,7 @@ namespace Stickies {
             }
         }
 
-        /** Persists a delivered reminder before publishing its notification. */
+        /** Persists a submitted reminder after its desktop notification call. */
         public void mark_reminder_notified (string id, int64 now_us) throws Error {
             var note = find_note (id);
             if (note != null && note.mark_reminder_notified (now_us)) {

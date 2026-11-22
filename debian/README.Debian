@@ -35,3 +35,11 @@ user confirms permanent deletion; managed images and PDFs survive archiving.
 The optional XDG autostart desktop entry is created only after an explicit
 user toggle and lives under ~/.config/autostart; package install does not
 activate it on its own.
+
+Stage 7 adds majoris-stickies-rtf for bounded text-only RTF export, available
+through the note menu or directly from the command line. It does not read or
+send attachments, overwrite existing export files, or change the database.
+The v5 schema remains unchanged. The CI workflow adds native GTK startup and
+single-instance activation smoke tests plus a Debian binary package build.
+These are qualification gates and have not been executed in this source-only
+authoring environment.

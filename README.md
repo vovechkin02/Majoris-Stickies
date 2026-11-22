@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.6.0 (Stage 6 source implementation)  
+**Version:** 0.7.0 (Stage 7 source implementation; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -146,8 +146,26 @@ Stage 6 adds (schema v5):
   tool. Archived/pinned notes carry their lifecycle flags in v5 bundles. The
   backup tool accepts both older and v5 databases.
 
-**Not yet implemented / requires a later implementation pass:** Complete
-RTF/RTFD interchange, unrestricted installed-font selection and arbitrary
+Stage 7 adds (schema v5 unchanged):
+
+- **RTF export:** A bounded, Unicode-safe, local `.rtf` exporter for a note's
+  title, plain-text body, and the supported font, size, color, and inline
+  formatting tags. Available from each note's menu and via the installed
+  `majoris-stickies-rtf` CLI. Rejects malformed style ranges and existing output
+  paths. Attachments are **not** embedded; RTF import and RTFD interchange
+  remain unimplemented. Rich RTF export uses a read-only SQLite snapshot after
+  flushing pending edits. It never modifies the note or its attachments.
+- **Reminder reliability:** Submission to GApplication notifications precedes
+  the durable notified marker, so a failure to mark cannot preempt sending.
+  The desktop notification server does not provide guaranteed delivery
+  acknowledgment; repeating a submission remains possible if saving fails.
+- **Release qualification:** A headless GTK/X11 start-and-activation smoke
+  runner, Debian binary package CI gate, installed-helper consistency checks,
+  and new RTF regression tests. Native compilation and runtime verification
+  still require a Debian 13 environment with the full SDK. Stage 7 is not
+  claimed as a build-verified release in this archive.
+
+**Not yet implemented / requires a later implementation pass:** RTF import/RTFD interchange, unrestricted installed-font selection and arbitrary
 point sizes/colors, true semantic editable list objects, inline positioned
 images, inline PDF page rendering, image crop/markup, true translucent top-level
 windows, workspace-sticky controls, automatic browser URL detection, and
@@ -156,13 +174,27 @@ runtime integration still require native qualification. PNG/JPEG/RAW/HDR image
 preview remains delegated to compatible **Majoris Image**, not to a second
 renderer. The text-only format and separate attachment panel are unchanged.
 
+### Export formatted RTF
+
+The note's **Export Rich Text (RTF)** command creates a new `.rtf` file and
+preserves supported text formatting. The installed helper can be used directly:
+
+```sh
+majoris-stickies-rtf --data-dir "$HOME/.local/share/majoris/stickies" \
+  NOTE_UUID /path/to/new-note.rtf
+```
+
+Only active notes are exported. The output file must not already exist.
+Attachments, inline PDF preview, RTF import, and RTFD packages are not provided.
+The helper uses only the Python standard library and never writes to SQLite.
+
 ## Supported platforms and integration
 
 | Component | Support |
 | --- | --- |
 | Debian 13 / GNOME | Target platform; native runtime not yet qualified |
 | GTK4 / libadwaita | Declarative GTK4 GUI, majoris-themed note paper |
-| SQLite | Local data; schema v5 with transactional migrations |
+| SQLite | Local data; schema v5 with transactional migrations; no Stage 7 database migration |
 | [Majoris Image](https://github.com/vovechkin02/Majoris-Image) | Optional GTK4 dependency; image file previews only |
 | GNOME Shell | Optional extension; targeted at Shell 48–50, unverified in compositor |
 | Internet / account | Not required |
@@ -301,8 +333,8 @@ own data directory, not a shared SQLite database.
   filenames and original display names in SQLite.
 - Shell-managed positions: `window-positions.json` in the same data directory,
   written only by the optional extension.
-- The schema uses `PRAGMA user_version=4` and upgrades Stage 1–4 schemas.
-  in-place, preserving note IDs and existing content. Databases from newer
+- The schema uses `PRAGMA user_version=5` and upgrades Stage 1–5 schemas
+  in place, preserving note IDs and existing content. Databases from newer
   versions are rejected rather than overwritten.
 - The installed `majoris-stickies-backup` command creates a consistent
   SQLite snapshot (including committed WAL transactions) and bundles all
@@ -312,8 +344,8 @@ own data directory, not a shared SQLite database.
   `.db` may omit both attachment files and uncheckpointed WAL transactions.
   For a controlled backup, use the utility described below.
 
-Closing a note window does not delete the note; deleting a note is permanent
-and asks for confirmation. A normal note close records the note as no longer
+Closing a note window does not delete the note. Ordinary deletion moves it to
+Trash; permanent deletion requires a separate confirmation. A normal note close records the note as no longer
 visible. A forced crash can leave a saved visible state to reopen next time.
 
 ### Back up and restore

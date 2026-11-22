@@ -1,3 +1,12 @@
+majoris-stickies (0.7.0-1) unstable; urgency=medium
+
+  * Add safe Unicode RTF export for active notes without changing schema v5.
+  * Record reminder submission before marking one-shot reminders as notified.
+  * Expand Debian release CI with a bounded GTK smoke test and binary build.
+  * Keep Majoris Image and GNOME Shell integration optional.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Sun, 22 Nov 2026 14:03:00 +1100
+
 majoris-stickies (0.6.0-1) unstable; urgency=medium
 
   * Add reversible Archive and Trash, pinned notes, and schema v5 migration.

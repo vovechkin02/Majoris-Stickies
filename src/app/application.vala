@@ -122,10 +122,12 @@ namespace Stickies {
                     continue;
                 }
                 try {
-                    store.mark_reminder_notified (note.id, now_us);
                     var notification = new GLib.Notification (note.title);
                     notification.set_body ("Stickies reminder");
                     send_notification (note.id, notification);
+                    // A failed save may resubmit on the next poll; it must not
+                    // suppress a reminder that was never submitted at all.
+                    store.mark_reminder_notified (note.id, now_us);
                 } catch (Error error) {
                     warning ("Unable to deliver reminder for %s: %s", note.id, error.message);
                 }

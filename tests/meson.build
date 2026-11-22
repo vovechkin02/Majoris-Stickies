@@ -107,3 +107,19 @@ test(
          meson.project_source_root() / 'tests/integration', '-p', 'test_stage6_exchange.py'],
   suite: 'integration',
 )
+
+test(
+  'Stage 7 bounded RTF export',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage7_rtf.py'],
+  suite: 'integration',
+)
+
+test(
+  'Stage 7 packaging and menu contracts',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage7_release.py'],
+  suite: 'integration',
+)

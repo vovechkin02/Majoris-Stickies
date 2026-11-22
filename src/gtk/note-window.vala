@@ -278,6 +278,10 @@ namespace Stickies {
                 popover.popdown ();
                 choose_html_export ();
             });
+            menu_item (menu, "Export Rich Text (RTF)…", () => {
+                popover.popdown ();
+                choose_rtf_export ();
+            });
             menu_item (menu, "Share Note with Attachments…", () => {
                 popover.popdown ();
                 choose_share_bundle ();
@@ -728,6 +732,37 @@ namespace Stickies {
                 return;
             } catch (Error error) {
                 show_save_failure ("Could not share HTML: " + error.message);
+            }
+        }
+
+        /** Selects a new local RTF export file for the current note. */
+        private void choose_rtf_export () {
+            var dialog = new Gtk.FileDialog ();
+            dialog.title = "Export RTF (New File)";
+            dialog.initial_name = "note.rtf";
+            dialog.save.begin (this, attachment_cancellable, (object, result) => {
+                try {
+                    var file = dialog.save.end (result);
+                    export_rtf_async.begin (file);
+                } catch (IOError.CANCELLED error) {
+                    return;
+                } catch (Error error) {
+                    show_save_failure (error.message);
+                }
+            });
+        }
+
+        /** Exports formatted text without modifying notes or copying attachments. */
+        private async void export_rtf_async (GLib.File destination) {
+            try {
+                yield RtfExporter.export_note (
+                    repository, note.id, destination, attachment_cancellable
+                );
+                save_label.label = "RTF exported";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not export RTF: " + error.message);
             }
         }
 
