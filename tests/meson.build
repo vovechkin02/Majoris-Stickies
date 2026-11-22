@@ -157,3 +157,21 @@ test(
          '-p', 'test_stage8_completion.py'],
   suite: 'integration',
 )
+
+stage8_final_unit_executable = executable(
+  'test-stage8-final',
+  [core_sources, files('unit/test-stage8-final.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 8 final formatting and image tokens', stage8_final_unit_executable,
+  suite: 'unit')
+
+test(
+  'Stage 8 final metadata and import regression',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage8_final.py'],
+  suite: 'integration',
+)

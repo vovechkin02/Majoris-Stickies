@@ -182,8 +182,52 @@ def inspect_package(source: Path) -> tuple[str, str, list[Path]]:
         included.append(path)
     if len(included) > MAX_ATTACHMENTS:
         raise RtfdError("RTFD package contains too many attachments")
+    read_attachment_metadata(source, included)
     return text, formatting, included
 
+
+
+def read_attachment_metadata(source: Path, included: list[Path]) -> dict[str, tuple[str, str]]:
+    """Validate optional Majoris metadata against actual package files.
+
+    The manifest never selects a filesystem path: filenames are matched against
+    independently validated entries. Untrusted display names cannot contain
+    separators, controls, or path traversal components. Legacy packages without
+    metadata retain their generated filenames.
+    """
+    manifest_path = source / "majoris.json"
+    if not manifest_path.exists() and not manifest_path.is_symlink():
+        return {
+            asset.name: (asset.name, mimetypes.guess_type(asset.name)[0] or "")
+            for asset in included
+        }
+    _regular_file(manifest_path, 32 * 1024)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("format") != "majoris-rtfd-1":
+        raise RtfdError("Unsupported RTFD metadata format")
+    entries = manifest.get("attachments")
+    if not isinstance(entries, list) or len(entries) != len(included):
+        raise RtfdError("RTFD metadata does not match its attachment collection")
+    asset_names = {asset.name for asset in included}
+    metadata: dict[str, tuple[str, str]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise RtfdError("Invalid RTFD attachment metadata entry")
+        filename = entry.get("file")
+        name = entry.get("name")
+        mime = entry.get("mime")
+        if (not isinstance(filename, str) or filename not in asset_names
+                or filename in metadata or not isinstance(name, str)
+                or not name or name in {".", ".."}
+                or len(name.encode("utf-8")) > 255
+                or any(char in name for char in "/\\")
+                or any(ord(char) < 32 or ord(char) == 127 for char in name)
+                or not isinstance(mime, str)
+                or mime not in MIME_SUFFIXES
+                or not filename.endswith(MIME_SUFFIXES[mime])):
+            raise RtfdError("Invalid RTFD attachment name, type, or mapping")
+        metadata[filename] = (name, mime)
+    return metadata
 
 def main(argv: list[str] | None = None) -> int:
     """Expose explicit local export and non-mutating inspect operations."""
@@ -195,14 +239,22 @@ def main(argv: list[str] | None = None) -> int:
     export.add_argument("destination", type=Path)
     inspect = commands.add_parser("inspect")
     inspect.add_argument("source", type=Path)
+    metadata = commands.add_parser("metadata")
+    metadata.add_argument("source", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "export":
             export_note(args.data_dir, args.note_id, args.destination)
-        else:
+        elif args.command == "inspect":
             text, formatting, assets = inspect_package(args.source)
             print(json.dumps({"text": text, "formatting": formatting,
                               "files": [str(path) for path in assets]}, ensure_ascii=True))
+        else:
+            _, _, assets = inspect_package(args.source)
+            descriptions = read_attachment_metadata(args.source, assets)
+            for asset in assets:
+                name, mime = descriptions[asset.name]
+                print(f"{asset.name}\t{quote(name, safe='')}\t{mime}")
     except (OSError, sqlite3.Error, UnicodeError, json.JSONDecodeError,
             RtfdError, RtfImportError, RtfExportError) as error:
         print(f"RTFD failed: {error}", file=sys.stderr)

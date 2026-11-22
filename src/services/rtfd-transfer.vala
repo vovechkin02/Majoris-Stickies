@@ -127,11 +127,55 @@ namespace Stickies {
                 }
             }
             files.close (cancellable);
+
+            // The installed validator parses JSON, checks the exact file set,
+            // and returns escaped names without exposing untrusted paths.
+            string[] command = { "majoris-stickies-rtfd", "metadata", source_path };
+            var validator = new GLib.Subprocess.newv (
+                command, GLib.SubprocessFlags.STDOUT_PIPE |
+                GLib.SubprocessFlags.STDERR_PIPE
+            );
+            string? metadata_output;
+            string? metadata_error;
+            yield validator.communicate_utf8_async (
+                null, cancellable, out metadata_output, out metadata_error
+            );
+            if (!validator.get_successful () || metadata_output == null ||
+                metadata_output.length > 32 * 1024) {
+                throw new IOError.INVALID_DATA ("RTFD attachment metadata was rejected");
+            }
+            var original_names = new Gee.HashMap<string, string> ();
+            var original_types = new Gee.HashMap<string, string> ();
+            foreach (var line in metadata_output.split ("\n")) {
+                if (line == "") {
+                    continue;
+                }
+                var fields = line.split ("\t");
+                if (fields.length != 3 || original_names.has_key (fields[0])) {
+                    throw new IOError.INVALID_DATA ("Invalid RTFD metadata response");
+                }
+                var decoded = GLib.Uri.unescape_string (fields[1], null);
+                if (decoded == null || decoded == "") {
+                    throw new IOError.INVALID_DATA ("Invalid RTFD display name");
+                }
+                original_names.set (fields[0], decoded);
+                original_types.set (fields[0], fields[2]);
+            }
+            if (original_names.size != attachments.size) {
+                throw new IOError.INVALID_DATA ("RTFD metadata is incomplete");
+            }
+            foreach (var attachment in attachments) {
+                if (!original_names.has_key (attachment.get_basename () ?? "")) {
+                    throw new IOError.INVALID_DATA ("RTFD metadata file mismatch");
+                }
+            }
             var created = new Gee.ArrayList<string> ();
             try {
                 foreach (var attachment in attachments) {
+                    var file_name = attachment.get_basename () ?? "";
                     var copied = yield repository.attach_file (
-                        note_id, attachment, cancellable
+                        note_id, attachment, cancellable,
+                        original_names.get (file_name), original_types.get (file_name)
                     );
                     created.add (copied.id);
                 }

@@ -53,6 +53,7 @@ namespace Stickies {
         private NoteRepository repository;
         private Note note;
         private GLib.Cancellable attachment_cancellable;
+        private InlineImageController inline_images;
         private Gee.ArrayList<GLib.File> pdf_previews;
         private bool is_syncing_view = false;
         private uint64 editor_revision = 0;
@@ -73,6 +74,13 @@ namespace Stickies {
             attachment_cancellable = new GLib.Cancellable ();
             pdf_previews = new Gee.ArrayList<GLib.File> ();
             RichTextCodec.prepare (body_view.buffer);
+            inline_images = new InlineImageController (
+                body_view, attachment_cancellable
+            );
+            inline_images.changed.connect (() => {
+                editor_revision++;
+                persist_editor_body ();
+            });
             paper_box.add_css_class ("note-paper");
             set_default_size (note.window_width, note.is_collapsed ? 90 : note.window_height);
             apply_color (note.color);
@@ -121,9 +129,16 @@ namespace Stickies {
             if (title_entry.text != note.title) {
                 title_entry.text = note.title;
             }
-            if (body_view.buffer.text != note.content ||
+            if (editor_text () != note.content ||
                 last_rendered_formatting != note.formatting) {
                 RichTextCodec.load (body_view.buffer, note.content, note.formatting);
+                try {
+                    inline_images.restore (
+                        note.formatting, repository.list_attachments (note.id)
+                    );
+                } catch (Error error) {
+                    show_save_failure ("Inline image restoration failed: " + error.message);
+                }
                 last_rendered_formatting = note.formatting;
             }
             apply_color (note.color);
@@ -259,6 +274,14 @@ namespace Stickies {
                 popover.popdown ();
                 choose_text_style ();
             });
+            menu_item (menu, "Choose Installed Font…", () => {
+                popover.popdown ();
+                choose_installed_font ();
+            });
+            menu_item (menu, "Choose Text Color…", () => {
+                popover.popdown ();
+                choose_text_color ();
+            });
             menu_item (menu, "Find and Replace…", () => {
                 popover.popdown ();
                 choose_find_replace ();
@@ -326,6 +349,10 @@ namespace Stickies {
             menu_item (menu, "Share Note with Attachments…", () => {
                 popover.popdown ();
                 choose_share_bundle ();
+            });
+            menu_item (menu, "Insert Image at Cursor…", () => {
+                popover.popdown ();
+                choose_inline_image ();
             });
             menu_item (menu, "Attach Image or PDF…", () => {
                 popover.popdown ();
@@ -400,6 +427,60 @@ namespace Stickies {
                 }
             });
             dialog.present (this);
+        }
+
+        /** Uses the GTK font chooser to apply a real installed font to selected text. */
+        private void choose_installed_font () {
+            var dialog = new Gtk.FontDialog ();
+            dialog.choose_font.begin (
+                this, null, attachment_cancellable, (object, result) => {
+                    try {
+                        var selected = dialog.choose_font.end (result);
+                        var family = selected.get_family ();
+                        if (family == null) {
+                            return;
+                        }
+                        var style = TextStyleFormat.font_token (family);
+                        if (style != "") {
+                            format_selection (style);
+                        }
+                        int size = selected.get_size () / Pango.SCALE;
+                        var size_style = TextStyleFormat.size_token (size);
+                        if (size_style != "") {
+                            format_selection (size_style);
+                        }
+                    } catch (IOError.CANCELLED error) {
+                        return;
+                    } catch (Error error) {
+                        show_save_failure (error.message);
+                    }
+                }
+            );
+        }
+
+        /** Chooses a bounded foreground RGB color using the native GTK picker. */
+        private void choose_text_color () {
+            var dialog = new Gtk.ColorDialog ();
+            dialog.choose_rgba.begin (
+                this, null, attachment_cancellable, (object, result) => {
+                    try {
+                        var color = dialog.choose_rgba.end (result);
+                        var red = (int) (color.red * 255.0 + 0.5);
+                        var green = (int) (color.green * 255.0 + 0.5);
+                        var blue = (int) (color.blue * 255.0 + 0.5);
+                        var token = TextStyleFormat.color_token (
+                            "%02x%02x%02x".printf (red, green, blue)
+                        );
+                        if (token != "") {
+                            format_selection (token);
+                        }
+                    } catch (IOError.CANCELLED error) {
+                        return;
+                    } catch (Error error) {
+                        show_save_failure (error.message);
+                    }
+                }
+            );
         }
 
         /** Provides repeatable search/replace without a closing response dialog. */
@@ -579,6 +660,11 @@ namespace Stickies {
             var key_controller = new Gtk.EventControllerKey ();
             key_controller.key_pressed.connect ((keyval, keycode, modifiers) => {
                 if ((modifiers & Gdk.ModifierType.CONTROL_MASK) == 0) {
+                    if ((keyval == Gdk.Key.Return || keyval == Gdk.Key.KP_Enter) &&
+                        TextEditCommands.continue_list (body_view.buffer)) {
+                        persist_editor_body ();
+                        return true;
+                    }
                     return false;
                 }
                 if (keyval == Gdk.Key.Return || keyval == Gdk.Key.KP_Enter) {
@@ -612,9 +698,17 @@ namespace Stickies {
             persist_editor_body ();
         }
 
+        /** Reads child-anchor object characters without losing media positions. */
+        private string editor_text () {
+            Gtk.TextIter start;
+            Gtk.TextIter end;
+            body_view.buffer.get_bounds (out start, out end);
+            return body_view.buffer.get_slice (start, end, true);
+        }
+
         /** Sends both rich-text runs and text through one repository update. */
         private void persist_editor_body () {
-            var text = body_view.buffer.text;
+            var text = editor_text ();
             var formatting = RichTextCodec.serialize (body_view.buffer);
             if (!NoteFormatting.is_valid (text, formatting)) {
                 show_save_failure ("Formatting exceeds the supported note limits");
@@ -867,7 +961,7 @@ namespace Stickies {
         /** Replaces editor text only after a complete and validated conversion. */
         private async void import_rtf_async (GLib.File source) {
             uint64 revision_before_import = editor_revision;
-            var original_content = body_view.buffer.text;
+            var original_content = editor_text ();
             var original_formatting = RichTextCodec.serialize (body_view.buffer);
             try {
                 string text;
@@ -876,7 +970,7 @@ namespace Stickies {
                     source, attachment_cancellable, out text, out formatting
                 );
                 if (editor_revision != revision_before_import ||
-                    body_view.buffer.text != original_content ||
+                    editor_text () != original_content ||
                     RichTextCodec.serialize (body_view.buffer) != original_formatting) {
                     show_status ("Import canceled: note changed during conversion");
                     return;
@@ -979,7 +1073,7 @@ namespace Stickies {
         /** Imports RTF text and media, rolling back new files if editing races. */
         private async void import_rtfd_async (GLib.File source) {
             uint64 initial_revision = editor_revision;
-            var original_content = body_view.buffer.text;
+            var original_content = editor_text ();
             var original_formatting = RichTextCodec.serialize (body_view.buffer);
             Gee.ArrayList<string>? created = null;
             try {
@@ -992,7 +1086,7 @@ namespace Stickies {
                 );
                 created = imported_ids;
                 if (editor_revision != initial_revision ||
-                    body_view.buffer.text != original_content ||
+                    editor_text () != original_content ||
                     RichTextCodec.serialize (body_view.buffer) != original_formatting) {
                     foreach (var attachment_id in imported_ids) {
                         repository.remove_attachment (note.id, attachment_id);
@@ -1300,6 +1394,52 @@ namespace Stickies {
             attachments_box.add_controller (target);
         }
 
+        /** Selects an image for insertion at the current text cursor. */
+        private void choose_inline_image () {
+            var dialog = new Gtk.FileDialog ();
+            dialog.title = "Insert Image at Cursor";
+            dialog.open.begin (this, attachment_cancellable, (object, result) => {
+                try {
+                    var file = dialog.open.end (result);
+                    insert_image_async.begin (file);
+                } catch (IOError.CANCELLED error) {
+                    return;
+                } catch (Error error) {
+                    show_save_failure (error.message);
+                }
+            });
+        }
+
+        /** Inserts the image only if editing has not moved during file copying. */
+        private async void insert_image_async (GLib.File file) {
+            uint64 starting_revision = editor_revision;
+            try {
+                var attachment = yield repository.attach_file (
+                    note.id, file, attachment_cancellable
+                );
+                if (!attachment.is_image ()) {
+                    save_label.label = "Attached PDF; only images can be inline";
+                    return;
+                }
+                if (editor_revision != starting_revision) {
+                    save_label.label = "Image attached; insertion skipped after text changes";
+                    return;
+                }
+                is_syncing_view = true;
+                inline_images.insert (attachment);
+                is_syncing_view = false;
+                editor_revision++;
+                persist_editor_body ();
+                save_label.label = "Inline image inserted";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not insert image: " + error.message);
+            } finally {
+                is_syncing_view = false;
+            }
+        }
+
         /** Shows a native plain-text import chooser. */
         private void choose_import () {
             var dialog = new Gtk.FileDialog ();
@@ -1316,6 +1456,9 @@ namespace Stickies {
 
         /** Imports bounded UTF-8 off the GTK main loop without executing markup. */
         private async void import_text_async (GLib.File file) {
+            uint64 initial_revision = editor_revision;
+            var previous_text = editor_text ();
+            var previous_formatting = RichTextCodec.serialize (body_view.buffer);
             try {
                 var info = yield file.query_info_async (
                     "standard::size,standard::type",
@@ -1341,6 +1484,12 @@ namespace Stickies {
                 string text = (string) bytes;
                 if (!text.validate ()) {
                     throw new IOError.INVALID_DATA ("The text file must be valid UTF-8");
+                }
+                if (editor_revision != initial_revision ||
+                    editor_text () != previous_text ||
+                    RichTextCodec.serialize (body_view.buffer) != previous_formatting) {
+                    show_status ("Import canceled: note changed while loading");
+                    return;
                 }
                 is_syncing_view = true;
                 RichTextCodec.load (body_view.buffer, text, "");
@@ -1374,7 +1523,7 @@ namespace Stickies {
         /** Exports UTF-8 asynchronously without changing the note's stored text. */
         private async void export_text_async (GLib.File file) {
             try {
-                var text = body_view.buffer.text;
+                var text = editor_text ();
                 string? new_etag;
                 yield file.replace_contents_async (
                     text.data,

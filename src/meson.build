@@ -1,15 +1,18 @@
 core_sources = files(
+  'core/inline-image-format.vala',
   'core/note-attachment.vala',
   'core/note-formatting.vala',
   'core/note-palette.vala',
   'core/note-repository.vala',
   'core/note-transfer.vala',
   'core/source-link.vala',
+  'core/text-style-format.vala',
   'core/note.vala',
 )
 
 gtk_sources = files(
   'gtk/ink-canvas.vala',
+  'gtk/inline-image-controller.vala',
   'gtk/manager-window.vala',
   'gtk/note-window.vala',
   'gtk/rich-text-codec.vala',

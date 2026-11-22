@@ -42,8 +42,79 @@ namespace Stickies {
                         return;
                 }
                 buffer.insert (ref position, prefix, -1);
+                Gtk.TextIter paragraph_start;
+                buffer.get_iter_at_line (out paragraph_start, line);
+                var paragraph_end = paragraph_start;
+                paragraph_end.forward_to_line_end ();
+                var kind_tag = buffer.tag_table.lookup ("list-" + kind);
+                if (kind_tag != null) {
+                    buffer.apply_tag (kind_tag, paragraph_start, paragraph_end);
+                }
             }
             buffer.end_user_action ();
+        }
+
+        /** Continues typed lists on Return, or ends an empty list item. */
+        public static bool continue_list (Gtk.TextBuffer buffer) {
+            Gtk.TextIter cursor;
+            buffer.get_iter_at_mark (out cursor, buffer.get_insert ());
+            if (!cursor.ends_line ()) {
+                return false;
+            }
+            var paragraph_start = cursor;
+            paragraph_start.set_line_offset (0);
+            var current = buffer.get_text (paragraph_start, cursor, false);
+            var indentation = new GLib.StringBuilder ();
+            int offset = 0;
+            while (offset < current.length &&
+                (current[offset] == ' ' || current[offset] == '\t')) {
+                indentation.append_c (current[offset]);
+                offset++;
+            }
+            var rest = current.substring (offset);
+            string prefix = "";
+            string kind = "";
+            if (rest.has_prefix ("• ")) {
+                prefix = "• ";
+                kind = "list-bullet";
+            } else if (rest.has_prefix ("☐ ") || rest.has_prefix ("☑ ")) {
+                prefix = "☐ ";
+                kind = "list-checklist";
+            } else {
+                var dot = rest.index_of (". ");
+                int number;
+                if (dot > 0 && dot < 9 &&
+                    int.try_parse (rest.substring (0, dot), out number) &&
+                    number >= 1 && number < 1000000) {
+                    prefix = "%d. ".printf (number + 1);
+                    kind = "list-numbered";
+                }
+            }
+            if (prefix == "") {
+                return false;
+            }
+            buffer.begin_user_action ();
+            var marker_end = paragraph_start;
+            var marker_length = rest.has_prefix ("☑ ") ||
+                rest.has_prefix ("☐ ") || rest.has_prefix ("• ") ? 2 :
+                rest.index_of (". ") + 2;
+            marker_end.forward_chars (offset + marker_length);
+            if (rest == "• " || rest == "☐ " || rest == "☑ " ||
+                (kind == "list-numbered" && rest.length == marker_length)) {
+                buffer.delete (ref paragraph_start, ref marker_end);
+            } else {
+                var to_insert = "\n" + indentation.str + prefix;
+                buffer.insert (ref cursor, to_insert, -1);
+                Gtk.TextIter start;
+                buffer.get_iter_at_mark (out start, buffer.get_insert ());
+                start.backward_chars (prefix.char_count ());
+                var tag = buffer.tag_table.lookup (kind);
+                if (tag != null) {
+                    buffer.apply_tag (tag, start, cursor);
+                }
+            }
+            buffer.end_user_action ();
+            return true;
         }
 
         /** Indents or outdents selected paragraphs as one undoable edit. */

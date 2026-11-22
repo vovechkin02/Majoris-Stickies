@@ -108,8 +108,17 @@ namespace Stickies {
             var attachments = list_attachments (id);
             var copy = duplicate_note (id);
             try {
+                var identities = new Gee.HashMap<string, string> ();
                 foreach (var attachment in attachments) {
-                    yield clone_managed_attachment (copy.id, attachment, cancellable);
+                    var new_id = yield clone_managed_attachment (
+                        copy.id, attachment, cancellable
+                    );
+                    identities.set (attachment.id, new_id);
+                }
+                var remapped = InlineImageFormat.remap (source.formatting, identities);
+                if (remapped != source.formatting) {
+                    set_body (copy.id, source.content, remapped);
+                    flush_note (copy.id);
                 }
             } catch (Error error) {
                 try {
@@ -127,7 +136,7 @@ namespace Stickies {
          * Copies a trusted managed attachment without guessing MIME from its .asset path.
          * Neither a missing source nor a failed copy leaves an SQL attachment row.
          */
-        private async void clone_managed_attachment (
+        private async string clone_managed_attachment (
             string destination_note_id,
             NoteAttachment original,
             GLib.Cancellable? cancellable
@@ -171,6 +180,7 @@ namespace Stickies {
                 }
                 throw error;
             }
+            return new_id;
         }
 
         /** Looks up a note by its stable ID, or returns null. */
@@ -352,14 +362,16 @@ namespace Stickies {
         public async NoteAttachment attach_file (
             string note_id,
             GLib.File source,
-            GLib.Cancellable? cancellable = null
+            GLib.Cancellable? cancellable = null,
+            string? original_name = null,
+            string? declared_mime = null
         ) throws Error {
             if (find_note (note_id) == null) {
                 throw new IOError.NOT_FOUND ("The note no longer exists");
             }
             var info = yield source.query_info_async (
                 "standard::display-name,standard::size,standard::content-type,standard::type",
-                GLib.FileQueryInfoFlags.NONE,
+                GLib.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
                 GLib.Priority.DEFAULT,
                 cancellable
             );
@@ -367,7 +379,16 @@ namespace Stickies {
                 info.get_size () < 0 || info.get_size () > MAX_ATTACHMENT_BYTES) {
                 throw new IOError.INVALID_ARGUMENT ("Only regular files up to 50 MiB are supported");
             }
-            var mime = info.get_content_type () ?? "application/octet-stream";
+            var mime = declared_mime ??
+                (info.get_content_type () ?? "application/octet-stream");
+            var display_name = original_name ?? info.get_display_name ();
+            if (!display_name.validate () || display_name.length == 0 ||
+                display_name.length > 255 || display_name == "." ||
+                display_name == ".." || display_name.contains ("/") ||
+                display_name.contains ("\\") || display_name.contains ("\n") ||
+                display_name.contains ("\r")) {
+                throw new IOError.INVALID_ARGUMENT ("Invalid attachment display name");
+            }
             if (mime != "application/pdf" && !mime.has_prefix ("image/")) {
                 throw new IOError.NOT_SUPPORTED ("Only PDFs and image files may be attached");
             }
@@ -404,7 +425,7 @@ namespace Stickies {
                 );
                 check_bind (statement.bind_text (1, id));
                 check_bind (statement.bind_text (2, note_id));
-                check_bind (statement.bind_text (3, info.get_display_name ()));
+                check_bind (statement.bind_text (3, display_name));
                 check_bind (statement.bind_text (4, mime));
                 check_step (statement.step ());
             } catch (Error error) {
@@ -416,7 +437,7 @@ namespace Stickies {
                 throw error;
             }
             var attachment = new NoteAttachment (
-                id, note_id, info.get_display_name (), mime, attachment_path (id)
+                id, note_id, display_name, mime, attachment_path (id)
             );
             attachment_changed (note_id);
             return attachment;

@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.8.1 (Stage 8 completion pass; native release gate pending)  
+**Version:** 0.8.2 (Stage 8 final functional pass; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,44 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## Stage 8 final pass (v0.8.2)
+
+This update expands the v0.8.1 implementation without changing the on-disk
+SQLite schema (still v5), note IDs, image attachment storage, or backup schema.
+
+- **Import safety:** Plain-text imports validate the editor revision and the
+  originally displayed text/formatting before replacing the note. RTF/RTFD
+  operations retain their existing revision guards.
+- **RTFD metadata:** The bounded package validator now checks every manifest
+  attachment against the validated asset set, rejects duplicate/mismatched
+  identities, traversal and invalid MIME/name pairs, and preserves original
+  Unicode filenames and MIME types on import. Legacy packages lacking the
+  optional Majoris manifest remain importable with generated names.
+- **Positioned images:** A new Insert Image at Cursor command stores an image
+  through the existing managed attachment repository and adds a GTK text child
+  anchor at the insertion position. Rendering uses Majoris ImageKit if built
+  with `majoris-image-gtk4-1`; otherwise an inline placeholder is shown.
+  The preview can be resized to 160, 240, or 320 pixels. The position is a
+  Unicode object character with a validated `image_<UUID>_<width>` style span.
+  Note duplication remaps these references to the copied attachments.
+- **Text styles:** GTK installed-font and text-color dialogs provide bounded
+  persistent font-family, point-size (8–72), and RGB tags. Original presets
+  are retained for compatibility.
+- **List editing:** Paragraph list-kind tags supplement the existing portable
+  textual bullets, numbers, and checkboxes. Pressing Return continues a list
+  and an empty list marker ends it. List markers remain plain text, not an
+  independent nested-document tree.
+
+**Limits:** This is not full Cocoa RTFD fidelity, unlimited image sizing, image
+cropping, or a general-purpose rich-document editor. RTF/RTFD export preserves
+its documented subset; newly chosen dynamic font/color styles and inline
+anchor placement are Majoris-native and are not losslessly represented in
+external RTFD. Inline media is not embedded in rich clipboard exports. Full
+native Vala compilation and GNOME runtime validation are still required.
+
+See [`docs/stage-8-final.md`](docs/stage-8-final.md) for implementation and
+qualification details.
 
 ## Features and scope
 

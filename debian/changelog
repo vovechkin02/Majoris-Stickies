@@ -1,3 +1,16 @@
+majoris-stickies (0.8.2-1) unstable; urgency=medium
+
+  * Prevent plain-text import from overwriting concurrent editor changes.
+  * Validate RTFD metadata and restore original attachment names and types.
+  * Add cursor-positioned image anchors and three resize presets through ImageKit.
+  * Preserve inline image attachment references across note duplication.
+  * Add installed-font and RGB text color pickers with bounded stored styles.
+  * Add typed paragraph-list tags and continued list editing on Return.
+  * Preserve SQLite schema v5 and existing backup/interchange formats.
+  * Native Vala, GTK runtime, and Debian package qualification are outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Sun, 22 Nov 2026 19:07:00 +1100
+
 majoris-stickies (0.8.1-1) unstable; urgency=medium
 
   * Read RTF font/color tables by declared values, not assumed indexes.

@@ -11,6 +11,14 @@ namespace Stickies {
 
         /** Returns whether a style identifier is supported by the editor. */
         public static bool supports (string style) {
+            string attachment_id;
+            int width_px;
+            if (InlineImageFormat.parse (style, out attachment_id, out width_px)) {
+                return true;
+            }
+            if (TextStyleFormat.supports (style)) {
+                return true;
+            }
             switch (style) {
                 case "bold":
                 case "italic":
@@ -35,6 +43,9 @@ namespace Stickies {
                 case "align-left":
                 case "align-center":
                 case "align-right":
+                case "list-bullet":
+                case "list-numbered":
+                case "list-checklist":
                     return true;
                 default:
                     return false;
@@ -69,6 +80,13 @@ namespace Stickies {
                     !int.try_parse (fields[1], out end) ||
                     start < 0 || end <= start || end > length ||
                     !supports (fields[2])) {
+                    return false;
+                }
+                string attachment_id;
+                int width_px;
+                if (InlineImageFormat.parse (
+                    fields[2], out attachment_id, out width_px
+                ) && end != start + 1) {
                     return false;
                 }
             }

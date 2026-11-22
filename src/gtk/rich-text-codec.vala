@@ -14,7 +14,8 @@ namespace Stickies {
                 "font-sans", "font-serif", "font-monospace",
                 "size-10", "size-12", "size-14", "size-16", "size-18", "size-20",
                 "size-24", "text-red", "text-blue", "text-green",
-                "align-left", "align-center", "align-right"
+                "align-left", "align-center", "align-right",
+                "list-bullet", "list-numbered", "list-checklist"
             };
         }
 
@@ -70,6 +71,13 @@ namespace Stickies {
                     Gtk.Justification.RIGHT);
                 buffer.tag_table.add (tag);
             }
+            // List kinds are semantic paragraph tags; their visible prefixes
+            // remain portable text for older databases and plain-text export.
+            foreach (var kind in new string[] {
+                "list-bullet", "list-numbered", "list-checklist"
+            }) {
+                buffer.tag_table.add (new Gtk.TextTag (kind));
+            }
             buffer.enable_undo = true;
         }
 
@@ -94,14 +102,44 @@ namespace Stickies {
                 Gtk.TextIter end;
                 buffer.get_iter_at_offset (out start, start_offset);
                 buffer.get_iter_at_offset (out end, end_offset);
-                buffer.apply_tag_by_name (pieces[2], start, end);
+                var tag = buffer.tag_table.lookup (pieces[2]);
+                if (tag == null && NoteFormatting.supports (pieces[2])) {
+                    tag = new Gtk.TextTag (pieces[2]);
+                    string family;
+                    string color;
+                    int size;
+                    if (TextStyleFormat.parse_font (pieces[2], out family)) {
+                        tag.family = family;
+                    } else if (TextStyleFormat.parse_size (
+                        pieces[2], out size
+                    )) {
+                        tag.size_points = (double) size;
+                    } else if (TextStyleFormat.parse_color (
+                        pieces[2], out color
+                    )) {
+                        tag.foreground = "#" + color;
+                    }
+                    buffer.tag_table.add (tag);
+                }
+                if (tag != null) {
+                    buffer.apply_tag (tag, start, end);
+                }
             }
         }
 
         /** Encodes active tag intervals as Unicode-character positions. */
         public static string serialize (Gtk.TextBuffer buffer) {
             var result = new GLib.StringBuilder ();
-            foreach (var style in styles ()) {
+            var names = new Gee.ArrayList<string> ();
+            foreach (var built_in in styles ()) {
+                names.add (built_in);
+            }
+            buffer.tag_table.@foreach ((tag) => {
+                if (tag.name != null && TextStyleFormat.supports (tag.name)) {
+                    names.add (tag.name);
+                }
+            });
+            foreach (var style in names) {
                 var tag = buffer.tag_table.lookup (style);
                 if (tag == null) {
                     continue;
@@ -128,6 +166,30 @@ namespace Stickies {
                     position = next;
                 }
             }
+            // Inline media tags are dynamic, unlike the fixed character styles.
+            // Each tag applies only to its one object-replacement character.
+            Gtk.TextIter cursor;
+            buffer.get_start_iter (out cursor);
+            while (!cursor.is_end ()) {
+                if (cursor.get_char () == 0xFFFC) {
+                    foreach (var tag in cursor.get_tags ()) {
+                        if (tag.name == null) {
+                            continue;
+                        }
+                        string attachment_id;
+                        int width_px;
+                        if (InlineImageFormat.parse (
+                            tag.name, out attachment_id, out width_px
+                        )) {
+                            NoteFormatting.append_span (
+                                result, cursor.get_offset (),
+                                cursor.get_offset () + 1, tag.name
+                            );
+                        }
+                    }
+                }
+                cursor.forward_char ();
+            }
             return result.str;
         }
 
@@ -142,6 +204,20 @@ namespace Stickies {
                 return false;
             }
             var tag = buffer.tag_table.lookup (style);
+            if (tag == null && TextStyleFormat.supports (style)) {
+                tag = new Gtk.TextTag (style);
+                string family;
+                string color;
+                int size;
+                if (TextStyleFormat.parse_font (style, out family)) {
+                    tag.family = family;
+                } else if (TextStyleFormat.parse_size (style, out size)) {
+                    tag.size_points = (double) size;
+                } else if (TextStyleFormat.parse_color (style, out color)) {
+                    tag.foreground = "#" + color;
+                }
+                buffer.tag_table.add (tag);
+            }
             if (tag == null) {
                 return false;
             }

@@ -363,3 +363,30 @@ share/backup compatibility surfaces are unchanged.
 
 No new GoF pattern is implied: the CLI adapters translate distinct interfaces,
 while Gtk/GObject signals remain the idiomatic event/Observer mechanism.
+
+
+## Stage 8 final image anchors and metadata boundary (v0.8.2)
+
+`InlineImageFormat` is the stable validation layer for one-character image
+references. `InlineImageController` owns GTK text anchors and ImageKit viewer
+widgets. `RichTextCodec` serializes spans in Unicode character coordinates;
+for an anchor the note text stores U+FFFC and one `image_<UUID>_<width>` span.
+On note duplication the repository must map old attachment IDs to new IDs in
+that run data. All media bytes remain in `attachments/<UUID>.asset`, never in
+GTK formatting tags or a note's content field. The renderer is optional at
+build time, so the editor supports placeholders without ImageKit.
+
+RTFD validation remains in the existing `stickies_rtfd.py` helper. Its `metadata`
+command returns a line-oriented percent-escaped display-name and MIME map
+only after validating the package against regular files and its bounded
+manifest. `RtfdTransfer` checks that every imported asset appears in this map
+and delegates all durable writes to `NoteRepository.attach_file`. No arbitrary
+filesystem paths or scripts are accepted as metadata values. This is a
+narrow data interchange boundary, not a full Cocoa RTFD implementation.
+
+**Pattern assessment:** GTK/GObject signals implement Observer idioms for note
+updates; the repository remains the storage facade. `InlineImageController`
+encapsulates widget ownership and view composition. Neither an artificial
+Factory nor a Strategy interface is added where there is only one editor and
+one supported image component. The existing SQL schema and exchange tokens
+remain compatibility surfaces.
