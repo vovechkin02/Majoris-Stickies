@@ -9,7 +9,8 @@ recorded in the existing schema, while failed submissions remain retryable.
 from __future__ import annotations
 
 import argparse
-from contextlib import closing
+import fcntl
+from contextlib import closing, contextmanager
 import os
 from pathlib import Path
 import sqlite3
@@ -70,7 +71,38 @@ def send_notification(title: str) -> None:
         raise ReminderError("Desktop notification service is unavailable") from error
 
 
-def dispatch_due(
+@contextmanager
+def exclusive_store_lock(data_dir: Path):
+    """Use the same fail-closed flock protocol as the GUI and exchange tool."""
+    try:
+        info = data_dir.lstat()
+    except OSError as error:
+        raise ReminderError("The Stickies data directory is unavailable") from error
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        raise ReminderError("Stickies requires a real user-owned data directory")
+    flags = os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(data_dir / ".stickies-session.lock", flags, 0o600)
+    except OSError as error:
+        raise ReminderError("Could not safely open the notes session lock") from error
+    try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or
+                info.st_nlink != 1 or info.st_mode & 0o077):
+            raise ReminderError("Notes session lock must be an owner-only regular file")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ReminderError(
+                "Stickies is open or another worker is active"
+            ) from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
+
+def _dispatch_due_locked(
     data_dir: Path,
     *,
     now_us: int | None = None,
@@ -80,7 +112,7 @@ def dispatch_due(
 ) -> int:
     """Submit due notes and persist acknowledgements only after successful dispatch.
 
-    Only active, unnotified reminders in SQLite schemas 4–6 are considered.
+    Only active, unnotified reminders in SQLite schemas 4–7 are considered.
     The worker never creates or migrates a database. It yields to an existing
     application session, leaving that app as the sole reminder dispatcher.
     """
@@ -103,16 +135,22 @@ def dispatch_due(
     with closing(sqlite3.connect(uri, uri=True, timeout=1)) as connection:
         connection.execute("PRAGMA busy_timeout=1000")
         schema = connection.execute("PRAGMA user_version").fetchone()[0]
-        if schema not in (4, 5, 6):
+        if schema not in (4, 5, 6, 7):
             raise ReminderError("Unsupported notes schema; open Stickies to upgrade")
         status_filter = "AND status=0" if schema >= 5 else ""
+        columns = ("id,title,remind_at_us,reminder_repeat_us" if schema >= 7
+                   else "id,title,remind_at_us")
         query = (
-            "SELECT id,title,remind_at_us FROM notes WHERE remind_at_us>0 "
+            f"SELECT {columns} FROM notes WHERE remind_at_us>0 "
             "AND reminder_notified_at_us=0 AND remind_at_us<=? "
             f"{status_filter} ORDER BY remind_at_us ASC LIMIT ?"
         )
         due = connection.execute(query, (when, MAX_DUE_PER_RUN)).fetchall()
-        for identity, title, deadline in due:
+        for row in due:
+            identity, title, deadline = row[:3]
+            repeat_us = row[3] if schema >= 7 else 0
+            if repeat_us not in (0, 86_400_000_000, 604_800_000_000):
+                raise ReminderError("Invalid stored reminder recurrence")
             if is_running():
                 break
             if dry_run:
@@ -121,14 +159,51 @@ def dispatch_due(
             notify(title)
             # The update compares the original deadline so a modified reminder
             # can never be acknowledged on behalf of a new reminder.
-            cursor = connection.execute(
-                "UPDATE notes SET reminder_notified_at_us=? WHERE id=? "
-                "AND remind_at_us=? AND reminder_notified_at_us=0",
-                (when, identity, deadline),
-            )
+            if repeat_us in (86_400_000_000, 604_800_000_000):
+                # Advance from the original deadline, skipping missed periods
+                # rather than delivering a burst of old notifications.
+                periods = (when - deadline) // repeat_us + 1
+                next_due = deadline + periods * repeat_us
+                if next_due <= 2**63 - 1:
+                    cursor = connection.execute(
+                        "UPDATE notes SET remind_at_us=?, reminder_notified_at_us=0 "
+                        "WHERE id=? AND remind_at_us=? AND reminder_notified_at_us=0 "
+                        "AND reminder_repeat_us=?",
+                        (next_due, identity, deadline, repeat_us),
+                    )
+                else:
+                    cursor = connection.execute(
+                        "UPDATE notes SET reminder_notified_at_us=?, "
+                        "reminder_repeat_us=0 "
+                        "WHERE id=? AND remind_at_us=? AND reminder_notified_at_us=0",
+                        (when, identity, deadline),
+                    )
+            else:
+                cursor = connection.execute(
+                    "UPDATE notes SET reminder_notified_at_us=? WHERE id=? "
+                    "AND remind_at_us=? AND reminder_notified_at_us=0",
+                    (when, identity, deadline),
+                )
             connection.commit()
             count += int(cursor.rowcount == 1)
     return count
+
+
+def dispatch_due(
+    data_dir: Path,
+    *,
+    now_us: int | None = None,
+    is_running: Callable[[], bool] = application_is_running,
+    notify: Callable[[str], None] = send_notification,
+    dry_run: bool = False,
+) -> int:
+    """Dispatch under the same exclusive store lock as the GTK application."""
+    with exclusive_store_lock(data_dir):
+        return _dispatch_due_locked(
+            data_dir, now_us=now_us, is_running=is_running,
+            notify=notify, dry_run=dry_run,
+        )
+
 
 
 def main(argv: list[str] | None = None) -> int:

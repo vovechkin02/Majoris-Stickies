@@ -2,7 +2,7 @@ project(
   'majoris-stickies',
   'vala',
   'c',
-  version: '0.9.5',
+  version: '0.9.6',
   meson_version: '>=1.0.0',
   default_options: ['warning_level=2'],
 )
@@ -99,7 +99,7 @@ install_data(
 )
 
 summary({
-  'Stage': '9.5 durable title mode and manager refresh — native qualification pending',
+  'Stage': '9.6 paper colors and recurring reminders — native qualification pending',
   'ImageKit': imagekit_dep.found(),
   'Spellcheck': spellcheck_dep.found() and sourceview_dep.found(),
   'Shell extension installed': get_option('shell_extension'),

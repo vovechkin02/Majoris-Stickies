@@ -60,6 +60,7 @@ namespace Stickies {
         private bool is_syncing_view = false;
         private uint64 editor_revision = 0;
         private string current_color = "";
+        private Gtk.CssProvider? paper_color_provider;
         private string last_rendered_formatting = "";
         private Gtk.Button? pin_button;
         private Gtk.Button? auto_title_button;
@@ -169,9 +170,11 @@ namespace Stickies {
         /** Changes only paper styling; system chrome remains owned by the theme. */
         private void apply_color (string color) {
             if (current_color != "") {
-                paper_box.remove_css_class ("note-" + current_color);
+                paper_box.remove_css_class (NotePaperStyle.class_for (current_color));
             }
-            paper_box.add_css_class ("note-" + color);
+            NotePaperStyle.detach (paper_box, paper_color_provider);
+            paper_color_provider = NotePaperStyle.attach (paper_box, color);
+            paper_box.add_css_class (NotePaperStyle.class_for (color));
             current_color = color;
         }
 
@@ -237,8 +240,41 @@ namespace Stickies {
                 popover.popdown ();
             });
             layout.append (default_button);
+            var custom_button = new Gtk.Button.with_label ("Choose Custom Color…");
+            custom_button.clicked.connect (() => {
+                popover.popdown ();
+                choose_paper_color ();
+            });
+            layout.append (custom_button);
             popover.set_child (layout);
             color_button.popover = popover;
+        }
+
+        /** Chooses an accessible paper color without injecting untrusted CSS. */
+        private void choose_paper_color () {
+            var dialog = new Gtk.ColorDialog ();
+            dialog.choose_rgba.begin (
+                this, null, attachment_cancellable, (object, result) => {
+                    try {
+                        var picked = dialog.choose_rgba.end (result);
+                        int red = (int) (picked.red * 255.0 + 0.5);
+                        int green = (int) (picked.green * 255.0 + 0.5);
+                        int blue = (int) (picked.blue * 255.0 + 0.5);
+                        var color = "#%02x%02x%02x".printf (red, green, blue);
+                        if (!NotePalette.is_custom (color)) {
+                            show_save_failure (
+                                "Choose a lighter paper color for readable dark text"
+                            );
+                            return;
+                        }
+                        repository.set_color (note.id, color);
+                    } catch (IOError.CANCELLED error) {
+                        return;
+                    } catch (Error error) {
+                        show_save_failure (error.message);
+                    }
+                }
+            );
         }
 
         /** Creates explicit note commands in the existing Majoris menu style. */
@@ -290,6 +326,14 @@ namespace Stickies {
             menu_item (menu, "Set Reminder…", () => {
                 popover.popdown ();
                 choose_reminder ();
+            });
+            menu_item (menu, "Repeat Reminder Every 24 Hours", () => {
+                popover.popdown ();
+                set_repeating_reminder (1);
+            });
+            menu_item (menu, "Repeat Reminder Every 7 Days", () => {
+                popover.popdown ();
+                set_repeating_reminder (7);
             });
             menu_item (menu, "Snooze Reminder — 10 Minutes", () => {
                 popover.popdown ();
@@ -661,6 +705,21 @@ namespace Stickies {
             dialog.present (this);
         }
 
+        /** Enables a fixed-duration recurring reminder with a future first delivery. */
+        private void set_repeating_reminder (int days) {
+            int64 interval_us = (int64) days * 24 * 60 * 60 * 1000000;
+            int64 deadline_us = note.remind_at_us > GLib.get_real_time () ?
+                note.remind_at_us : GLib.get_real_time () + interval_us;
+            try {
+                repository.set_reminder (note.id, deadline_us, interval_us);
+                save_label.label = "Repeats every %d day%s".printf (
+                    days, days == 1 ? "" : "s"
+                );
+            } catch (Error error) {
+                show_save_failure ("Could not repeat reminder: " + error.message);
+            }
+        }
+
         /** Reschedules an existing reminder without changing note text or attachments. */
         private void snooze_reminder (int minutes) {
             if (note.remind_at_us <= 0) {
@@ -669,7 +728,7 @@ namespace Stickies {
             }
             int64 deadline_us = GLib.get_real_time () + (int64) minutes * 60 * 1000000;
             try {
-                repository.set_reminder (note.id, deadline_us);
+                repository.set_reminder (note.id, deadline_us, note.reminder_repeat_us);
                 save_label.label = "Reminder snoozed for %d minutes".printf (minutes);
             } catch (Error error) {
                 show_save_failure ("Could not snooze reminder: " + error.message);

@@ -28,7 +28,8 @@ from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
 BUNDLE_VERSION = 1
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+TITLE_SCHEMA_VERSION = 6
 PREVIOUS_SCHEMA_VERSION = 5
 LEGACY_SCHEMA_VERSION = 4
 MAX_ASSET_BYTES = 50 * 1024 * 1024
@@ -57,7 +58,8 @@ PREVIOUS_NOTE_COLUMNS = (
     "window_height", "visible", "source_url", "remind_at_us",
     "reminder_notified_at_us", "status", "pinned",
 )
-NOTE_COLUMNS = PREVIOUS_NOTE_COLUMNS + ("auto_title",)
+TITLE_NOTE_COLUMNS = PREVIOUS_NOTE_COLUMNS + ("auto_title",)
+NOTE_COLUMNS = TITLE_NOTE_COLUMNS + ("reminder_repeat_us",)
 LEGACY_NOTE_COLUMNS = PREVIOUS_NOTE_COLUMNS[:-2]
 
 
@@ -178,20 +180,27 @@ def _portable_formatting(formatting: str, records: list[dict[str, str]]) -> str:
 def _validate_note(note: object) -> dict[str, Any]:
     """Check a remote record before any database or filesystem mutation."""
     if not isinstance(note, dict) or set(note) not in (
-        set(NOTE_COLUMNS), set(PREVIOUS_NOTE_COLUMNS), set(LEGACY_NOTE_COLUMNS)
+        set(NOTE_COLUMNS), set(TITLE_NOTE_COLUMNS),
+        set(PREVIOUS_NOTE_COLUMNS), set(LEGACY_NOTE_COLUMNS)
     ):
         raise ExchangeError("Unexpected note record fields")
     note = dict(note)
     note.setdefault("status", 0)
     note.setdefault("pinned", 0)
     note.setdefault("auto_title", 0)
+    note.setdefault("reminder_repeat_us", 0)
     if not _valid_id(note["id"]):
         raise ExchangeError("Invalid note identifier")
     for field in ("title", "content", "formatting", "color", "source_url"):
         if not isinstance(note[field], str):
             raise ExchangeError(f"Invalid {field} data")
     palette = {"yellow", "pink", "green", "blue", "purple", "orange", "teal", "gray"}
-    if len(note["title"]) > 160 or note["color"] not in palette:
+    custom = re.fullmatch(r"#[0-9a-f]{6}", note["color"])
+    if custom:
+        red, green, blue = (int(note["color"][start:start + 2], 16)
+                            for start in (1, 3, 5))
+        custom = (red * 2126 + green * 7152 + blue * 722 >= 180 * 10000)
+    if len(note["title"]) > 160 or not (note["color"] in palette or custom):
         raise ExchangeError("Invalid title or paper color")
     formatting = note["formatting"]
     if len(formatting.encode("utf-8")) > 1048576:
@@ -211,9 +220,14 @@ def _validate_note(note: object) -> dict[str, Any]:
             raise ExchangeError("Invalid note formatting range")
     if len(_json_bytes(note)) > MAX_NOTE_TEXT:
         raise ExchangeError("Note text is too large to exchange")
-    for name in ("created_at_us", "updated_at_us", "remind_at_us", "reminder_notified_at_us"):
+    for name in ("created_at_us", "updated_at_us", "remind_at_us", "reminder_notified_at_us",
+                 "reminder_repeat_us"):
         if type(note[name]) is not int or note[name] < 0:
             raise ExchangeError(f"Invalid {name}")
+    if note["reminder_repeat_us"] not in (0, 86_400_000_000, 604_800_000_000):
+        raise ExchangeError("Invalid reminder recurrence")
+    if note["remind_at_us"] == 0 and note["reminder_repeat_us"] != 0:
+        raise ExchangeError("A cleared reminder cannot recur")
     for name in ("collapsed", "floating", "translucent", "visible", "pinned", "auto_title"):
         if type(note[name]) is not int or note[name] not in (0, 1):
             raise ExchangeError(f"Invalid {name}")
@@ -257,7 +271,10 @@ def _snapshot(data_dir: Path) -> tuple[sqlite3.Connection, Path]:
         snapshot.close()
         raise ExchangeError("Damaged SQLite database")
     version = snapshot.execute("PRAGMA user_version").fetchone()[0]
-    if version not in (LEGACY_SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION, SCHEMA_VERSION):
+    if version not in (
+        LEGACY_SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION,
+        TITLE_SCHEMA_VERSION, SCHEMA_VERSION,
+    ):
         snapshot.close()
         raise ExchangeError("Open the current Stickies application to migrate this database")
     return snapshot, database_path
@@ -267,6 +284,7 @@ def _note_records(connection: sqlite3.Connection) -> dict[str, dict[str, Any]]:
     """Return an ID-indexed, validated snapshot of local note records."""
     schema = connection.execute("PRAGMA user_version").fetchone()[0]
     columns = (NOTE_COLUMNS if schema == SCHEMA_VERSION else
+               TITLE_NOTE_COLUMNS if schema == TITLE_SCHEMA_VERSION else
                PREVIOUS_NOTE_COLUMNS if schema == PREVIOUS_SCHEMA_VERSION else
                LEGACY_NOTE_COLUMNS)
     return {
@@ -304,7 +322,7 @@ def _revision(note: dict[str, Any], records: list[dict[str, str]]) -> str:
     shared_fields = (
         "id", "title", "content", "color", "created_at_us", "updated_at_us",
         "formatting", "source_url", "remind_at_us", "status", "pinned",
-        "auto_title",
+        "auto_title", "reminder_repeat_us",
     )
     # Attachment IDs are local storage keys and legitimately change on import.
     portable_assets = sorted(
@@ -315,6 +333,23 @@ def _revision(note: dict[str, Any], records: list[dict[str, str]]) -> str:
     return _sha256(_json_bytes({
         "note": {name: (_portable_formatting(note[name], records) if name == "formatting"
                          else note[name]) for name in shared_fields}, "assets": portable_assets,
+    }))
+
+
+def _title_revision(note: dict[str, Any], entries: list[dict[str, str]]) -> str:
+    """Verify earlier schema-v6 bundles without inventing recurrence fields."""
+    fields = (
+        "id", "title", "content", "color", "created_at_us", "updated_at_us",
+        "formatting", "source_url", "remind_at_us", "status", "pinned", "auto_title",
+    )
+    portable_assets = sorted(
+        ({"name": entry["name"], "mime": entry["mime"], "sha256": entry["sha256"]}
+         for entry in entries),
+        key=lambda value: (value["name"], value["mime"], value["sha256"]),
+    )
+    return _sha256(_json_bytes({
+        "note": {name: (_portable_formatting(note[name], entries) if name == "formatting"
+                         else note[name]) for name in fields}, "assets": portable_assets,
     }))
 
 
@@ -360,13 +395,18 @@ def _pack_note(
     """Create a bounded, deterministic single-note ZIP with verified assets."""
     _verify_image_references(note, assets)
     records = [assets[key][0] for key in sorted(assets)]
-    legacy = not note["auto_title"] and note["status"] == 0 and note["pinned"] == 0
-    previous = not note["auto_title"] and not legacy
+    legacy = (not note["auto_title"] and not note["reminder_repeat_us"] and
+              note["status"] == 0 and note["pinned"] == 0)
+    previous = (not note["auto_title"] and not note["reminder_repeat_us"] and
+                not legacy)
+    title = not note["reminder_repeat_us"] and not legacy and not previous
     revision = (_legacy_revision(note, records) if legacy else
-                _previous_revision(note, records) if previous else _revision(note, records))
+                _previous_revision(note, records) if previous else
+                _title_revision(note, records) if title else _revision(note, records))
     transferable_note = (
         {field: note[field] for field in LEGACY_NOTE_COLUMNS} if legacy else
-        {field: note[field] for field in PREVIOUS_NOTE_COLUMNS} if previous else note
+        {field: note[field] for field in PREVIOUS_NOTE_COLUMNS} if previous else
+        {field: note[field] for field in TITLE_NOTE_COLUMNS} if title else note
     )
     manifest = {
         "format": "majoris-stickies-note", "version": BUNDLE_VERSION,
@@ -402,6 +442,7 @@ def _read_bundle(path: Path) -> tuple[dict[str, Any], dict[str, tuple[dict[str, 
                 "format", "version", "note", "assets", "revision"
             } or manifest["format"] != "majoris-stickies-note" or manifest["version"] != 1:
                 raise ExchangeError("Unsupported note bundle")
+            record_fields = set(manifest["note"]) if isinstance(manifest["note"], dict) else set()
             note = _validate_note(manifest["note"])
             entries = manifest["assets"]
             if not isinstance(entries, list) or len(entries) > MAX_ATTACHMENTS:
@@ -433,13 +474,16 @@ def _read_bundle(path: Path) -> tuple[dict[str, Any], dict[str, tuple[dict[str, 
                 if (member.flag_bits & 1) or (member.external_attr >> 16) & 0o170000 == 0o120000:
                     raise ExchangeError("Encrypted or symlink archive members are not permitted")
             _verify_image_references(note, assets)
-            revision = _revision(note, entries)
+            if record_fields == set(NOTE_COLUMNS):
+                revision = _revision(note, entries)
+            elif record_fields == set(TITLE_NOTE_COLUMNS):
+                revision = _title_revision(note, entries)
+            elif record_fields == set(PREVIOUS_NOTE_COLUMNS):
+                revision = _previous_revision(note, entries)
+            else:
+                revision = _legacy_revision(note, entries)
             if revision != manifest["revision"]:
-                if (manifest["revision"] != _previous_revision(note, entries) or
-                        note["auto_title"] != 0):
-                    legacy_revision = _legacy_revision(note, entries)
-                    if legacy_revision != manifest["revision"] or note["auto_title"] != 0:
-                        raise ExchangeError("Share manifest was modified")
+                raise ExchangeError("Share manifest was modified")
             if not isinstance(manifest["revision"], str) or not SHA256.fullmatch(
                 manifest["revision"]
             ):
@@ -540,9 +584,12 @@ def _apply_remote(
         schema = connection.execute("PRAGMA user_version").fetchone()[0]
         if schema == LEGACY_SCHEMA_VERSION and (record["status"] or record["pinned"]):
             raise ExchangeError("Upgrade Stickies to import archived or pinned notes")
-        if schema != SCHEMA_VERSION and record["auto_title"]:
+        if schema < TITLE_SCHEMA_VERSION and record["auto_title"]:
             raise ExchangeError("Upgrade Stickies to preserve automatic note titles")
+        if schema < SCHEMA_VERSION and record["reminder_repeat_us"]:
+            raise ExchangeError("Upgrade Stickies to preserve recurring reminders")
         columns = (NOTE_COLUMNS if schema == SCHEMA_VERSION else
+               TITLE_NOTE_COLUMNS if schema == TITLE_SCHEMA_VERSION else
                PREVIOUS_NOTE_COLUMNS if schema == PREVIOUS_SCHEMA_VERSION else
                LEGACY_NOTE_COLUMNS)
         fields = ",".join(columns)
@@ -648,7 +695,8 @@ def _sync_folder_unlocked(
     remove_shared_bundles: list[Path] = []
     try:
         if live.execute("PRAGMA user_version").fetchone()[0] not in (
-            LEGACY_SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION, SCHEMA_VERSION
+            LEGACY_SCHEMA_VERSION, PREVIOUS_SCHEMA_VERSION,
+            TITLE_SCHEMA_VERSION, SCHEMA_VERSION
         ):
             raise ExchangeError("Local notes schema changed during synchronization")
         live.execute("PRAGMA foreign_keys=ON")

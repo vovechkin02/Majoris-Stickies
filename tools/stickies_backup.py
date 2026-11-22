@@ -71,7 +71,7 @@ def _quick_check(database_path: Path) -> tuple[int, list[str]]:
         if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
             raise BackupError("A saved attachment has an invalid note reference")
         version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-        if version < 1 or version > 6:
+        if version < 1 or version > 7:
             raise BackupError(f"Unsupported SQLite schema version: {version}")
         names = [] if version == 1 else [
             f"attachments/{row[0]}.asset" for row in

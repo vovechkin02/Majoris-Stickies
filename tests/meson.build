@@ -273,3 +273,22 @@ test(
          meson.project_source_root() / 'tests/integration', '-p', 'test_stage9_5_titles.py'],
   suite: 'integration',
 )
+
+# Stage 9.6 validates persisted recurring reminders and custom paper colors.
+stage9_6_unit_executable = executable(
+  'test-stage9-6',
+  [core_sources, files('unit/test-stage9-6.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 9.6 custom paper and recurring reminder persistence',
+  stage9_6_unit_executable, suite: 'unit')
+
+test(
+  'Stage 9.6 recurrence and portable color interoperability',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage9_6_features.py'],
+  suite: 'integration',
+)

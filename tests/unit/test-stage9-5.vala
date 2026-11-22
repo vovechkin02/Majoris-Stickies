@@ -97,7 +97,8 @@ private void test_v5_migration () {
             Sqlite.Statement statement;
             assert (database.prepare_v2 ("PRAGMA user_version", -1, out statement, null) == Sqlite.OK);
             assert (statement.step () == Sqlite.ROW);
-            assert (statement.column_int (0) == 6);
+            // Current installations migrate through v6 into schema v7.
+            assert (statement.column_int (0) == 7);
         }
         GLib.FileUtils.remove (path);
         GLib.FileUtils.remove (path + "-wal");

@@ -16,6 +16,7 @@ gtk_sources = files(
   'gtk/inline-image-controller.vala',
   'gtk/manager-window.vala',
   'gtk/note-window.vala',
+  'gtk/note-paper-style.vala',
   'gtk/rich-text-codec.vala',
   'gtk/text-edit-commands.vala',
 )

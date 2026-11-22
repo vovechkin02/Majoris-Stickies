@@ -77,6 +77,7 @@ namespace Stickies {
             foreach (var color in NotePalette.all_colors ()) {
                 color_names.append (NotePalette.label_for (color));
             }
+            color_names.append ("Custom Colors");
             color_filter.model = color_names;
             status_filter.model = new Gtk.StringList ({
                 "All Notes", "Pinned", "Archive", "Trash"
@@ -193,10 +194,12 @@ namespace Stickies {
             }
             var colors = NotePalette.all_colors ();
             uint selected_color = color_filter.selected;
-            if (selected_color > 0 && selected_color <= (uint) colors.length) {
-                var chosen = colors[(int) selected_color - 1];
+            if (selected_color > 0 && selected_color <= (uint) colors.length + 1) {
+                bool custom = selected_color == (uint) colors.length + 1;
+                var chosen = custom ? "" : colors[(int) selected_color - 1];
                 for (int index = visible_results.size - 1; index >= 0; index--) {
-                    if (visible_results[index].color != chosen) {
+                    if (custom ? !NotePalette.is_custom (visible_results[index].color) :
+                        visible_results[index].color != chosen) {
                         visible_results.remove_at (index);
                     }
                 }
@@ -283,7 +286,9 @@ namespace Stickies {
         private Gtk.Widget create_note_card (Note note) {
             var card = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
             card.add_css_class ("note-card");
-            card.add_css_class ("note-" + note.color);
+            card.add_css_class (NotePaperStyle.class_for (note.color));
+            // Card lifetime owns its scoped custom CSS provider.
+            NotePaperStyle.attach (card, note.color);
             card.set_size_request (list_toggle.active ? 520 : 210,
                 list_toggle.active ? 115 : 172);
 
@@ -325,8 +330,13 @@ namespace Stickies {
                 var reminder_time = new GLib.DateTime.from_unix_local (
                     note.remind_at_us / 1000000
                 );
+                var repeat_label = note.reminder_repeat_us == (int64) 24 * 60 * 60 * 1000000 ?
+                    " · Every 24h" :
+                    (note.reminder_repeat_us == (int64) 7 * 24 * 60 * 60 * 1000000 ?
+                    " · Every 7d" : "");
                 var reminder_label = new Gtk.Label (
-                    "Reminder: " + (reminder_time.format ("%b %d, %H:%M") ?? "")
+                    "Reminder: " + (reminder_time.format ("%b %d, %H:%M") ?? "") +
+                    repeat_label
                 );
                 reminder_label.halign = Gtk.Align.START;
                 reminder_label.add_css_class ("dim-label");

@@ -322,17 +322,20 @@ namespace Stickies {
         }
 
         /** Updates a reminder and queues an ordinary debounced persistence write. */
-        public void set_reminder (string id, int64 deadline_us) throws Error {
+        public void set_reminder (
+            string id, int64 deadline_us, int64 repeat_interval_us = 0
+        ) throws Error {
             var note = find_note (id);
             if (note == null) {
                 throw new IOError.NOT_FOUND ("The note no longer exists");
             }
             int64 now_us = GLib.get_real_time ();
             int64 maximum_us = now_us + (int64) 366 * 24 * 60 * 60 * 1000000;
-            if (deadline_us < 0 || deadline_us > maximum_us) {
+            if (deadline_us < 0 || deadline_us > maximum_us ||
+                !Note.is_valid_repeat (repeat_interval_us)) {
                 throw new IOError.INVALID_ARGUMENT ("The reminder date must be within one year");
             }
-            if (note.update_reminder (deadline_us)) {
+            if (note.update_reminder (deadline_us, repeat_interval_us)) {
                 queue_save (note);
             }
         }
@@ -659,7 +662,7 @@ namespace Stickies {
         /** Migrates Stage 1 in-place and rejects unknown newer schemas. */
         private void initialize_schema () throws Error {
             int version = read_schema_version ();
-            if (version > 6) {
+            if (version > 7) {
                 throw new IOError.NOT_SUPPORTED (
                     "This notes database was created by a newer version of Stickies"
                 );
@@ -759,6 +762,25 @@ namespace Stickies {
                     throw error;
                 }
             }
+            if (version < 7) {
+                execute ("BEGIN IMMEDIATE");
+                try {
+                    execute (
+                        "ALTER TABLE notes ADD COLUMN reminder_repeat_us " +
+                        "INTEGER NOT NULL DEFAULT 0 CHECK(reminder_repeat_us IN (" +
+                        "0,86400000000,604800000000))"
+                    );
+                    execute (
+                        "CREATE INDEX IF NOT EXISTS notes_reminders_due_idx " +
+                        "ON notes(remind_at_us) WHERE reminder_notified_at_us=0 AND status=0"
+                    );
+                    execute ("PRAGMA user_version=7");
+                    execute ("COMMIT");
+                } catch (Error error) {
+                    execute ("ROLLBACK");
+                    throw error;
+                }
+            }
         }
 
         /** Rejects corrupt or hostile identifiers before accessing private files. */
@@ -794,7 +816,8 @@ namespace Stickies {
                 "SELECT id, title, content, color, created_at_us, updated_at_us, " +
                 "formatting, collapsed, floating, translucent, " +
                 "window_width, window_height, visible, source_url, " +
-                "remind_at_us, reminder_notified_at_us, status, pinned, auto_title FROM notes",
+                "remind_at_us, reminder_notified_at_us, status, pinned, auto_title, " +
+                "reminder_repeat_us FROM notes",
                 out statement
             );
 
@@ -819,7 +842,8 @@ namespace Stickies {
                     statement.column_int64 (15),
                     statement.column_int (16),
                     statement.column_int (17) != 0,
-                    statement.column_int (18) != 0
+                    statement.column_int (18) != 0,
+                    statement.column_int64 (19)
                 );
                 notes.set (note.id, note);
             }
@@ -836,8 +860,9 @@ namespace Stickies {
                 "INSERT INTO notes " +
                 "(id, title, content, color, created_at_us, updated_at_us, " +
                 "formatting, collapsed, floating, translucent, window_width, window_height, visible, " +
-                "source_url,remind_at_us,reminder_notified_at_us,status,pinned,auto_title) " +
-                "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19) " +
+                "source_url,remind_at_us,reminder_notified_at_us,status,pinned,auto_title," +
+                "reminder_repeat_us) " +
+                "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20) " +
                 "ON CONFLICT(id) DO UPDATE SET " +
                 "title=excluded.title, content=excluded.content, " +
                 "color=excluded.color, updated_at_us=excluded.updated_at_us, " +
@@ -848,7 +873,8 @@ namespace Stickies {
                 "remind_at_us=excluded.remind_at_us, " +
                 "reminder_notified_at_us=excluded.reminder_notified_at_us, " +
                 "status=excluded.status, pinned=excluded.pinned, " +
-                "auto_title=excluded.auto_title",
+                "auto_title=excluded.auto_title, " +
+                "reminder_repeat_us=excluded.reminder_repeat_us",
                 out statement
             );
             check_bind (statement.bind_text (1, note.id));
@@ -870,6 +896,7 @@ namespace Stickies {
             check_bind (statement.bind_int (17, note.status));
             check_bind (statement.bind_int (18, note.is_pinned ? 1 : 0));
             check_bind (statement.bind_int (19, note.auto_title ? 1 : 0));
+            check_bind (statement.bind_int64 (20, note.reminder_repeat_us));
             check_step (statement.step ());
         }
 

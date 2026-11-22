@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.5 (durable title modes and manager updates; native release gate pending)  
+**Version:** 0.9.6 (custom paper colors and recurring reminders; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,28 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.6 — Custom paper colors and recurring reminders
+
+- **Custom paper:** Choose a light, accessible `#rrggbb` paper color. The eight
+  existing palette colors remain available, and custom colors work in note
+  windows, the manager, defaults, backups and portable note sharing. Dark or
+  malformed values are rejected instead of injected into GTK CSS.
+- **Recurring reminders:** Choose fixed 24-hour or 7-day repeats. A successful
+  notification advances to the next future occurrence without replaying missed
+  reminders. Clearing or changing a reminder resets its previous delivery.
+  These are elapsed-time intervals, not daylight-saving-aware calendar rules.
+- **Data migration:** SQLite schema v7 adds `reminder_repeat_us`, defaulting to
+  zero on all previous notes. Earlier v4–v6 share bundles remain compatible;
+  importing an active recurring reminder into an older database fails safely.
+- **Background coordination:** The reminder worker now holds the same exclusive
+  notes-store lock as the GUI and sync tool. Its optional systemd timer remains
+  disabled by default.
+- **Qualification:** New native model/migration tests and executed Python
+  regression cases cover color validation, reminder catch-up, locking,
+  interchange, downgrade rejection and backup compatibility.
+
+See [`docs/stage-9-6-qualification.md`](docs/stage-9-6-qualification.md).
 
 ## v0.9.5 — Title-mode compatibility and manager efficiency
 
@@ -609,7 +631,7 @@ own data directory, not a shared SQLite database.
   filenames and original display names in SQLite.
 - Shell-managed positions: `window-positions.json` in the same data directory,
   written only by the optional extension.
-- The schema uses `PRAGMA user_version=5` and upgrades Stage 1–5 schemas
+- The current schema uses `PRAGMA user_version=7` and upgrades Stage 1–6 schemas
   in place, preserving note IDs and existing content. Databases from newer
   versions are rejected rather than overwritten.
 - The installed `majoris-stickies-backup` command creates a consistent

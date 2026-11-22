@@ -33,3 +33,5 @@
 .color-chip.note-orange { background-color: #f5c8a1; color: #242424; }
 .color-chip.note-teal { background-color: #b5e8e7; color: #242424; }
 .color-chip.note-gray { background-color: #e5e5e5; color: #242424; }
+
+/* Custom colors are scoped per note using NotePaperStyle, never global CSS. */

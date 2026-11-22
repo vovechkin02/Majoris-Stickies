@@ -42,6 +42,9 @@ namespace Stickies {
         /** Reminder deadline in Unix microseconds, or zero when disabled. */
         public int64 remind_at_us { get; private set; default = 0; }
 
+        /** Repeat cadence in microseconds: zero, 24 hours, or 7 days. */
+        public int64 reminder_repeat_us { get; private set; default = 0; }
+
         /** Last successfully scheduled notification time for the current reminder. */
         public int64 reminder_notified_at_us { get; private set; default = 0; }
 
@@ -86,7 +89,8 @@ namespace Stickies {
             int64 reminder_notified_at_us = 0,
             int status = 0,
             bool is_pinned = false,
-            bool auto_title = false
+            bool auto_title = false,
+            int64 reminder_repeat_us = 0
         ) {
             Object ();
             this.id = id;
@@ -106,6 +110,8 @@ namespace Stickies {
             this.window_height = window_height >= 120 && window_height <= 4000 ? window_height : 330;
             this.is_visible = is_visible;
             this.remind_at_us = remind_at_us > 0 ? remind_at_us : 0;
+            this.reminder_repeat_us = this.remind_at_us > 0 &&
+                is_valid_repeat (reminder_repeat_us) ? reminder_repeat_us : 0;
             this.reminder_notified_at_us = this.remind_at_us > 0 &&
                 reminder_notified_at_us > 0 ? reminder_notified_at_us : 0;
             try {
@@ -152,21 +158,39 @@ namespace Stickies {
             return true;
         }
 
-        /** Schedules a one-time reminder; zero clears it and its delivery marker. */
-        internal bool update_reminder (int64 deadline_us) {
-            if (deadline_us < 0 || remind_at_us == deadline_us) {
+        /** Accepts only the two documented fixed-duration recurrence choices. */
+        public static bool is_valid_repeat (int64 interval_us) {
+            return interval_us == 0 ||
+                interval_us == (int64) 24 * 60 * 60 * 1000000 ||
+                interval_us == (int64) 7 * 24 * 60 * 60 * 1000000;
+        }
+
+        /** Schedules one-shot or fixed-duration reminders; zero clears both. */
+        internal bool update_reminder (int64 deadline_us, int64 interval_us = 0) {
+            if (deadline_us < 0 || !is_valid_repeat (interval_us) ||
+                (deadline_us == remind_at_us && interval_us == reminder_repeat_us)) {
                 return false;
             }
             remind_at_us = deadline_us;
+            reminder_repeat_us = deadline_us == 0 ? 0 : interval_us;
             reminder_notified_at_us = 0;
             return true;
         }
 
-        /** Records delivery once, avoiding repeated reminders on every poll. */
+        /** Records a one-shot delivery or advances a recurring reminder safely. */
         internal bool mark_reminder_notified (int64 now_us) {
             if (remind_at_us == 0 || reminder_notified_at_us != 0 ||
                 now_us < remind_at_us) {
                 return false;
+            }
+            if (reminder_repeat_us > 0) {
+                int64 periods = (now_us - remind_at_us) / reminder_repeat_us + 1;
+                if (periods <= (int64.MAX - remind_at_us) / reminder_repeat_us) {
+                    remind_at_us += periods * reminder_repeat_us;
+                    reminder_notified_at_us = 0;
+                    return true;
+                }
+                reminder_repeat_us = 0;
             }
             reminder_notified_at_us = now_us;
             return true;

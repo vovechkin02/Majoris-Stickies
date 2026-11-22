@@ -1,3 +1,14 @@
+majoris-stickies (0.9.6-1) unstable; urgency=medium
+
+  * Add bounded custom pastel paper colors with manager filtering and sharing.
+  * Migrate SQLite schema v6 to v7 for 24-hour/7-day recurring reminders.
+  * Preserve legacy note bundles and reject lossy recurring-note downgrades.
+  * Hold the shared session lock during background reminder dispatch.
+  * Add recurrence, portability, migration, and failure-path regression tests.
+  * Native Vala, GNOME/GTK, and Debian binary qualification remain outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 09:37:00 +1100
+
 majoris-stickies (0.9.5-1) unstable; urgency=medium
 
   * Persist automatic versus manually edited note titles using schema v6.
