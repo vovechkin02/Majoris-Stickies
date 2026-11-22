@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.2 (remaining-interoperability update; native release gate pending)  
+**Version:** 0.9.3 (coordination and editor completion; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,30 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.3 — Store coordination and editor completion
+
+- **Cross-process store safety:** the GTK application holds an exclusive
+  `.stickies-session.lock` for its lifetime. Manual and scheduled sync and
+  bundle import acquire the same fail-closed advisory lock. This eliminates
+  the previously documented check-to-start race between GUI activation and
+  offline synchronization/import. Existing SQLite schema v5 is unchanged.
+  Only regular, user-owned lock files with owner-only permissions are accepted.
+- **Safe duplication:** the synchronous `duplicate_note()` operation explicitly
+  refuses notes with managed attachments. The normal user-facing action still
+  uses `duplicate_complete()` and remaps inline image attachment IDs.
+- **Desktop editor:** double-click the titlebar background to collapse/expand
+  a note; Ctrl+click a literal HTTP(S) link to open it in the default browser.
+  No website URL is collected automatically.
+- **PDF preview zoom:** first-page and Previous/Next workflows now offer
+  bounded 320, 640, 960 and 1280-pixel preview sizes. Poppler rasterizes the
+  page, and Majoris Image displays the result; no new image decoder exists.
+- **Qualification:** native lock behavior is compiled and exercised through
+  GCC-backed Python tests; these are not substitutes for building the GTK/Vala
+  application on Debian 13 with Majoris Image available.
+
+For details and release blockers see
+[`docs/stage-9-3-qualification.md`](docs/stage-9-3-qualification.md).
 
 ## v0.9.2 — Interoperability and local automation
 

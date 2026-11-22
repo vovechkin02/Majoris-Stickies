@@ -11,6 +11,7 @@ import argparse
 import configparser
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -68,6 +69,12 @@ def check_metadata(root: Path) -> list[str]:
         root / "data/meson.build"
     ).read_text():
         errors.append("Meson install does not include the application icon")
+
+    # Debian invokes debian/rules directly; ZIP extraction must preserve +x.
+    if not (root / "debian/rules").stat().st_mode & stat.S_IXUSR:
+        errors.append("Debian rules must be executable for dpkg-buildpackage")
+    if not (root / "tools/stickies_auto_sync.py").stat().st_mode & stat.S_IXUSR:
+        errors.append("The scheduled-sync worker must retain executable permissions")
 
     control = (root / "debian/control").read_text(encoding="utf-8")
     if not all(phrase in control for phrase in (

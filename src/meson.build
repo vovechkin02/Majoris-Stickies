@@ -30,6 +30,11 @@ service_sources = files(
   'services/startup-preferences.vala',
 )
 
+native_sources = files(
+  'native/store-session-lock.c',
+  'native/store-session-lock.vapi',
+)
+
 app_sources = files(
   'app/application.vala',
   'app/main.vala',
@@ -44,7 +49,8 @@ resource_sources = gnome.compile_resources(
 
 stickies_executable = executable(
   'majoris-stickies',
-  [core_sources, service_sources, gtk_sources, app_sources, resource_sources],
+  [core_sources, service_sources, gtk_sources, app_sources, native_sources, resource_sources],
+  include_directories: include_directories('native'),
   dependencies: app_deps,
   vala_args: stickies_vala_args,
   install: true,

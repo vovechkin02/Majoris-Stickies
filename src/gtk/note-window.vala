@@ -11,6 +11,8 @@ namespace Stickies {
         private delegate void MenuCommand ();
 
         [GtkChild]
+        private unowned Adw.HeaderBar note_headerbar;
+        [GtkChild]
         private unowned Gtk.Button manager_button;
         [GtkChild]
         private unowned Gtk.Button screenshot_button;
@@ -89,6 +91,7 @@ namespace Stickies {
             create_options_menu ();
             connect_format_buttons ();
             register_checklist_click ();
+            register_header_double_click ();
             refresh_attachments ();
             register_attachment_drop ();
 
@@ -807,6 +810,66 @@ namespace Stickies {
             }
         }
 
+        /** Collapses the note by double-clicking empty headerbar space. */
+        private void register_header_double_click () {
+            var gesture = new Gtk.GestureClick ();
+            gesture.set_button (1);
+            gesture.pressed.connect ((click_count, x, y) => {
+                if (click_count == 2) {
+                    toggle_collapsed ();
+                }
+            });
+            note_headerbar.add_controller (gesture);
+        }
+
+        /** Opens a web URL only on an explicit Ctrl+click, never on typing. */
+        private void open_clicked_link (Gtk.TextIter at_position) {
+            var start = at_position;
+            var end = at_position;
+            int scanned = 0;
+            while (!start.starts_line () && scanned < 2048) {
+                var previous = start;
+                if (!previous.backward_char ()) {
+                    break;
+                }
+                var symbol = body_view.buffer.get_text (previous, start, false);
+                if (symbol == " " || symbol == "\t" || symbol == "\n" ||
+                    symbol == "<" || symbol == ">" || symbol == "\"") {
+                    break;
+                }
+                start = previous;
+                scanned++;
+            }
+            while (!end.ends_line () && scanned < 2048) {
+                var next = end;
+                if (!next.forward_char ()) {
+                    break;
+                }
+                var symbol = body_view.buffer.get_text (end, next, false);
+                if (symbol == " " || symbol == "\t" || symbol == "\n" ||
+                    symbol == "<" || symbol == ">" || symbol == "\"") {
+                    break;
+                }
+                end = next;
+                scanned++;
+            }
+            var candidate = body_view.buffer.get_text (start, end, false);
+            while (candidate.has_suffix (".") || candidate.has_suffix (",") ||
+                candidate.has_suffix (";") || candidate.has_suffix (")")) {
+                candidate = candidate.substring (0, candidate.length - 1);
+            }
+            if (!candidate.has_prefix ("http://") &&
+                !candidate.has_prefix ("https://")) {
+                return;
+            }
+            try {
+                var uri = SourceLink.normalize (candidate);
+                GLib.AppInfo.launch_default_for_uri (uri, null);
+            } catch (Error error) {
+                show_status ("Cannot open link: " + error.message);
+            }
+        }
+
         /** Allows a pointer click directly on a checklist glyph to toggle its state. */
         private void register_checklist_click () {
             var gesture = new Gtk.GestureClick ();
@@ -824,7 +887,15 @@ namespace Stickies {
                 Gtk.TextIter position;
                 if (!body_view.get_iter_at_location (
                     out position, buffer_x, buffer_y
-                ) || position.get_line_offset () > 1) {
+                )) {
+                    return;
+                }
+                if ((gesture.get_current_event_state () &
+                    Gdk.ModifierType.CONTROL_MASK) != 0) {
+                    open_clicked_link (position);
+                    return;
+                }
+                if (position.get_line_offset () > 1) {
                     return;
                 }
                 var start = position;
@@ -1338,16 +1409,23 @@ namespace Stickies {
                             var previous = new Gtk.Button.with_label ("Previous");
                             var following = new Gtk.Button.with_label ("Next");
                             var page_label = new Gtk.Label ("Page 1");
+                            var zoom_out = new Gtk.Button.with_label ("−");
+                            var zoom_in = new Gtk.Button.with_label ("+");
+                            zoom_out.tooltip_text = "Zoom out PDF preview";
+                            zoom_in.tooltip_text = "Zoom in PDF preview";
                             previous.tooltip_text = "Preview the previous PDF page";
                             following.tooltip_text = "Preview the next PDF page";
                             previous.sensitive = false;
                             navigation.append (previous);
                             navigation.append (page_label);
                             navigation.append (following);
+                            navigation.append (zoom_out);
+                            navigation.append (zoom_in);
                             layout.append (navigation);
                             layout.append (viewer);
                             expander.set_child (layout);
                             int shown_page = 0;
+                            int zoom_edge = 640;
                             bool loading_page = false;
                             previous.clicked.connect (() => {
                                 if (loading_page || shown_page <= 1) {
@@ -1358,7 +1436,7 @@ namespace Stickies {
                                 previous.sensitive = false;
                                 following.sensitive = false;
                                 load_pdf_preview.begin (
-                                    attachment, viewer, requested_page, (object, result) => {
+                                    attachment, viewer, requested_page, zoom_edge, (object, result) => {
                                         if (load_pdf_preview.end (result)) {
                                             shown_page = requested_page;
                                         }
@@ -1379,7 +1457,7 @@ namespace Stickies {
                                 following.sensitive = false;
                                 page_label.label = "Loading page %d…".printf (requested_page);
                                 load_pdf_preview.begin (
-                                    attachment, viewer, requested_page, (object, result) => {
+                                    attachment, viewer, requested_page, zoom_edge, (object, result) => {
                                         if (load_pdf_preview.end (result)) {
                                             shown_page = requested_page;
                                         }
@@ -1389,6 +1467,44 @@ namespace Stickies {
                                         );
                                         previous.sensitive = shown_page > 1;
                                         following.sensitive = shown_page < 250;
+                                    }
+                                );
+                            });
+                            zoom_out.clicked.connect (() => {
+                                if (loading_page || zoom_edge <= 320 || shown_page < 1) {
+                                    return;
+                                }
+                                int requested_edge = zoom_edge == 1280 ? 960 :
+                                    (zoom_edge == 960 ? 640 : 320);
+                                loading_page = true;
+                                load_pdf_preview.begin (
+                                    attachment, viewer, shown_page, requested_edge,
+                                    (object, result) => {
+                                        if (load_pdf_preview.end (result)) {
+                                            zoom_edge = requested_edge;
+                                        }
+                                        loading_page = false;
+                                        zoom_out.sensitive = zoom_edge > 320;
+                                        zoom_in.sensitive = zoom_edge < 1280;
+                                    }
+                                );
+                            });
+                            zoom_in.clicked.connect (() => {
+                                if (loading_page || zoom_edge >= 1280 || shown_page < 1) {
+                                    return;
+                                }
+                                int requested_edge = zoom_edge == 320 ? 640 :
+                                    (zoom_edge == 640 ? 960 : 1280);
+                                loading_page = true;
+                                load_pdf_preview.begin (
+                                    attachment, viewer, shown_page, requested_edge,
+                                    (object, result) => {
+                                        if (load_pdf_preview.end (result)) {
+                                            zoom_edge = requested_edge;
+                                        }
+                                        loading_page = false;
+                                        zoom_out.sensitive = zoom_edge > 320;
+                                        zoom_in.sensitive = zoom_edge < 1280;
                                     }
                                 );
                             });
@@ -1420,13 +1536,13 @@ namespace Stickies {
 
         /** Renders one requested PDF page with bounded temporary-file lifetime. */
         private async bool load_pdf_preview (
-            NoteAttachment attachment, ImageKit.ImageView viewer, int page
+            NoteAttachment attachment, ImageKit.ImageView viewer, int page, int edge
         ) {
             GLib.File? preview = null;
             try {
                 var pdf = GLib.File.new_for_path (attachment.path);
-                preview = yield PdfPreviewService.render_page (
-                    pdf, page, attachment_cancellable
+                preview = yield PdfPreviewService.render_page_scaled (
+                    pdf, page, edge, attachment_cancellable
                 );
                 if (attachment_cancellable.is_cancelled () || viewer.get_parent () == null) {
                     return false;

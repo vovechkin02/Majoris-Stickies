@@ -9,7 +9,7 @@
     <property name="content">
       <object class="AdwToolbarView">
         <child type="top">
-          <object class="AdwHeaderBar">
+          <object class="AdwHeaderBar" id="note_headerbar">
             <child type="start">
               <object class="GtkButton" id="manager_button">
                 <property name="icon-name">view-list-symbolic</property>

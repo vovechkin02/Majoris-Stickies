@@ -79,8 +79,21 @@ namespace Stickies {
             return insert_note ("Untitled Note", "", NotePalette.DEFAULT_COLOR);
         }
 
-        /** Duplicates a note with a new ID and creation timestamp. */
+        /**
+         * Duplicates a text-only note; callers with attachments must use
+         * duplicate_complete() to avoid silently losing managed media.
+         */
         public Note duplicate_note (string id) throws Error {
+            if (list_attachments (id).size > 0) {
+                throw new IOError.NOT_SUPPORTED (
+                    "This note has attachments; use duplicate_complete() instead"
+                );
+            }
+            return duplicate_text_only (id);
+        }
+
+        /** Creates a new note record as the first phase of full duplication. */
+        private Note duplicate_text_only (string id) throws Error {
             var source = find_note (id);
             if (source == null) {
                 throw new IOError.NOT_FOUND ("The source note no longer exists");
@@ -106,7 +119,7 @@ namespace Stickies {
                 throw new IOError.NOT_FOUND ("The source note is unavailable");
             }
             var attachments = list_attachments (id);
-            var copy = duplicate_note (id);
+            var copy = duplicate_text_only (id);
             try {
                 var identities = new Gee.HashMap<string, string> ();
                 foreach (var attachment in attachments) {

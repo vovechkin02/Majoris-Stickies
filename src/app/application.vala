@@ -15,6 +15,7 @@ namespace Stickies {
         private ShellWindowBridge shell_bridge;
         private ScreenshotPortal screenshot_portal;
         private uint reminder_poll_id = 0;
+        private int store_lock_descriptor = -1;
 
         /** Initializes the single-instance desktop application and its window registry. */
         public StickiesApp () {
@@ -83,8 +84,23 @@ namespace Stickies {
                     "notes.db"
                 );
                 try {
+                    var directory = GLib.Path.get_dirname (database_path);
+                    if (GLib.DirUtils.create_with_parents (directory, 0700) != 0) {
+                        throw new IOError.FAILED ("Cannot create the private notes directory");
+                    }
+                    store_lock_descriptor = StickiesStoreLock.acquire (directory);
+                    if (store_lock_descriptor < 0) {
+                        throw new IOError.BUSY (
+                            "The notes store is in use by another process. " +
+                            "Finish synchronization or import before opening Stickies."
+                        );
+                    }
                     repository = new NoteRepository (database_path);
                 } catch (Error error) {
+                    if (store_lock_descriptor >= 0) {
+                        StickiesStoreLock.release (store_lock_descriptor);
+                        store_lock_descriptor = -1;
+                    }
                     show_startup_error (error.message);
                     return;
                 }
@@ -161,6 +177,10 @@ namespace Stickies {
                 }
             }
 
+            if (store_lock_descriptor >= 0) {
+                StickiesStoreLock.release (store_lock_descriptor);
+                store_lock_descriptor = -1;
+            }
             base.shutdown ();
         }
 

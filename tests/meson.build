@@ -226,3 +226,12 @@ test(
          meson.project_source_root() / 'tests/integration', '-p', 'test_stage9_2_auto_sync.py'],
   suite: 'integration',
 )
+
+# Verify the same advisory lock is obeyed by the native GUI shim and Python exchange.
+test(
+  'Stage 9.3 notes-store session lock',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_store_session_lock.py'],
+  suite: 'integration',
+)

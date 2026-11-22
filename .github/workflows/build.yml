@@ -52,3 +52,6 @@ jobs:
           python3 -m unittest discover -s tests/integration -p 'test_stage7_*.py'
           python3 -m unittest discover -s tests/integration -p 'test_stage8_*.py'
           python3 -m unittest discover -s tests/integration -p 'test_stage9_*.py'
+
+      - name: Notes-store session concurrency regression
+        run: python3 -m unittest discover -s tests/integration -p 'test_store_session_lock.py'

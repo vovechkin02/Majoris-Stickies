@@ -9,12 +9,14 @@ created. Each independent device needs its own database and sync receipt file.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import io
 import json
 import os
 import re
+import stat
 import sqlite3
 import subprocess
 import sys
@@ -725,6 +727,38 @@ def _sync_folder_unlocked(
     return totals
 
 
+@contextmanager
+def exclusive_store_lock(data_dir: Path):
+    """Exclude GUI startup and other mutating exchange operations until exit.
+
+    This shares the .stickies-session.lock flock protocol with the native app.
+    Merely checking D-Bus before editing cannot prevent startup during sync.
+    """
+    try:
+        info = data_dir.lstat()
+    except OSError as error:
+        raise ExchangeError("The Stickies data directory is unavailable") from error
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        raise ExchangeError("Stickies requires a real user-owned data directory")
+    flags = os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(data_dir / ".stickies-session.lock", flags, 0o600)
+    except OSError as error:
+        raise ExchangeError("Could not safely open the notes session lock") from error
+    try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or
+                info.st_nlink != 1 or info.st_mode & 0o077):
+            raise ExchangeError("Notes session lock must be an owner-only regular file")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ExchangeError("Stickies is open or another import/sync is running") from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def sync_folder(
     data_dir: Path, folder: Path, app_closed: bool, propagate_deletions: bool = False
 ) -> dict[str, int]:
@@ -743,7 +777,10 @@ def sync_folder(
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise ExchangeError("Another folder synchronization is running") from error
-        return _sync_folder_unlocked(data_dir, folder, app_closed, propagate_deletions)
+        with exclusive_store_lock(data_dir):
+            return _sync_folder_unlocked(
+                data_dir, folder, app_closed, propagate_deletions
+            )
     finally:
         os.close(descriptor)
 
@@ -766,7 +803,15 @@ def share_note(data_dir: Path, note_id: str, output: Path) -> None:
 
 
 def import_note(data_dir: Path, source: Path, app_closed: bool) -> str:
-    """Import one verified bundle without overwriting a divergent local note."""
+    """Import a verified bundle without racing GUI startup or another import."""
+    if not app_closed:
+        raise ExchangeError("Close Stickies first, then confirm with --app-closed")
+    with exclusive_store_lock(data_dir):
+        return _import_note_unlocked(data_dir, source, app_closed)
+
+
+def _import_note_unlocked(data_dir: Path, source: Path, app_closed: bool) -> str:
+    """Perform a verified one-note import while the notes-store lock is held."""
     if not app_closed:
         raise ExchangeError("Close Stickies first, then confirm with --app-closed")
     if _application_is_running():

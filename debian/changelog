@@ -1,3 +1,16 @@
+majoris-stickies (0.9.3-1) unstable; urgency=medium
+
+  * Coordinate GTK application sessions and offline imports/sync with one
+    fail-closed, owner-only exclusive notes-store lock.
+  * Prevent partial text-only copies when notes have managed attachments.
+  * Support explicit Ctrl+click HTTP(S) links and header double-click collapse.
+  * Add bounded PDF page zoom levels (320/640/960/1280 pixels) via Poppler,
+    displayed through Majoris Image; correct preview lifetime bookkeeping.
+  * Preserve SQLite schema v5 and existing backup/share formats.
+  * Native Vala, GNOME/Wayland and Debian binary qualification remain required.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 08:00:00 +1100
+
 majoris-stickies (0.9.2-1) unstable; urgency=medium
 
   * Preserve dynamic font, color, size, and list styles in safe HTML clipboard output.

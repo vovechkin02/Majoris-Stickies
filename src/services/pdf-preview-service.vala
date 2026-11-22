@@ -13,15 +13,29 @@ namespace Stickies {
             int page,
             GLib.Cancellable? cancellable
         ) throws Error {
+            return yield render_page_scaled (pdf, page, 640, cancellable);
+        }
+
+        /** Renders one page at a selected, explicitly bounded zoom level. */
+        public static async GLib.File render_page_scaled (
+            GLib.File pdf,
+            int page,
+            int edge,
+            GLib.Cancellable? cancellable
+        ) throws Error {
             if (page < 1 || page > 250) {
                 throw new IOError.INVALID_ARGUMENT ("PDF page must be 1–250");
+            }
+            if (edge != 320 && edge != 640 && edge != 960 && edge != 1280) {
+                throw new IOError.INVALID_ARGUMENT ("Unsupported PDF zoom level");
             }
             var path = pdf.get_path ();
             if (path == null) {
                 throw new IOError.NOT_SUPPORTED ("PDF previews require a local attachment");
             }
             string[] argv = {
-                "majoris-stickies-pdf-preview", "--page", page.to_string (), path
+                "majoris-stickies-pdf-preview", "--page", page.to_string (),
+                "--edge", edge.to_string (), path
             };
             var process = new GLib.Subprocess.newv (
                 argv, GLib.SubprocessFlags.STDOUT_PIPE | GLib.SubprocessFlags.STDERR_PIPE

@@ -22,6 +22,8 @@ MAX_PDF_BYTES = 50 * 1024 * 1024
 MAX_PNG_BYTES = 6 * 1024 * 1024
 MAX_RENDER_SECONDS = 12
 MAX_PREVIEW_EDGE = 640
+MIN_PREVIEW_EDGE = 320
+MAX_ZOOM_EDGE = 1280
 MAX_PREVIEW_PAGE = 250
 STALE_PREVIEW_SECONDS = 24 * 60 * 60
 MAX_CLEANUP_CANDIDATES = 64
@@ -31,10 +33,12 @@ class PdfPreviewError(Exception):
     """Describe rejected inputs or a failed bounded Poppler invocation."""
 
 
-def render_page(source: Path, page: int = 1) -> Path:
+def render_page(source: Path, page: int = 1, edge: int = MAX_PREVIEW_EDGE) -> Path:
     """Return a fresh PNG in a 0700 directory, cleaning up on any failure."""
     if not 1 <= page <= MAX_PREVIEW_PAGE:
         raise PdfPreviewError("PDF page must be between 1 and 250")
+    if edge not in (320, 640, 960, 1280):
+        raise PdfPreviewError("PDF zoom level must be 320, 640, 960, or 1280 pixels")
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -58,7 +62,7 @@ def render_page(source: Path, page: int = 1) -> Path:
     try:
         command = [
             "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile", "-png",
-            "-scale-to", str(MAX_PREVIEW_EDGE), str(source), str(prefix),
+            "-scale-to", str(edge), str(source), str(prefix),
         ]
         completed = subprocess.run(
             command,
@@ -159,11 +163,12 @@ def main(argv: list[str] | None = None) -> int:
     """Print one safe temporary output path; errors never expose PDF contents."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--page", type=int, default=1)
+    parser.add_argument("--edge", type=int, default=MAX_PREVIEW_EDGE)
     parser.add_argument("source", type=Path)
     args = parser.parse_args(argv)
     cleanup_stale_previews()
     try:
-        output = render_page(args.source, args.page)
+        output = render_page(args.source, args.page, args.edge)
         print(output)
     except (PdfPreviewError, OSError) as error:
         print(f"PDF preview failed: {error}", file=sys.stderr)

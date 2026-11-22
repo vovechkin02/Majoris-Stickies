@@ -64,6 +64,26 @@ class PdfPreviewTests(unittest.TestCase):
                 result.unlink(missing_ok=True)
                 result.parent.rmdir()
 
+    def test_pdf_preview_zoom_levels(self) -> None:
+        """Verify explicit zoom sizes and reject arbitrary unbounded scales."""
+        if shutil.which("pdftoppm") is None:
+            self.skipTest("poppler-utils not installed")
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "note.pdf"
+            source.write_bytes(minimal_pdf())
+            for edge in (320, 640, 960, 1280):
+                output = preview.render_page(source, 1, edge)
+                try:
+                    width, height = struct.unpack(">II", output.read_bytes()[16:24])
+                    self.assertLessEqual(max(width, height), edge)
+                    self.assertGreater(max(width, height), edge // 2)
+                finally:
+                    output.unlink(missing_ok=True)
+                    output.parent.rmdir()
+            for edge in (0, -1, 200, 1600):
+                with self.assertRaises(preview.PdfPreviewError):
+                    preview.render_page(source, 1, edge)
+
     def test_rejects_invalid_pdf(self) -> None:
         """Do not invoke Poppler for ordinary or mislabeled attachment files."""
         with tempfile.TemporaryDirectory() as directory:
