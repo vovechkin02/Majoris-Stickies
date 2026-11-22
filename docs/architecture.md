@@ -1,4 +1,4 @@
-# Architecture and design decisions — Stage 2
+# Architecture and design decisions — Stages 1–4
 
 ## Scope and module responsibilities
 
@@ -163,3 +163,44 @@ introduced without a real independent variation point.
 **Compatibility:** Stage 3's additive SQLite migration does not rename earlier
 columns, existing GObject properties, application IDs, schemas, or Shell D-Bus
 methods. The source URL is optional and defaults to empty on older notes.
+
+## Stage 4: reliability, accessibility and distribution (0.4.0)
+
+- `NoteRepository.verify_integrity()` rejects corrupt SQLite storage before
+  changing the schema. Dirty-state writes are retried up to three times after
+  a timeout error (2/4/8 seconds); exhausted retries leave the note dirty and
+  the existing close guard reports the failure. No new database migration is
+  introduced. These retries do not replace a durable backup strategy.
+- `ManagerWindow` uses 60-card pages rather than allocating one GTK widget tree
+  per matching note. The repository retains in-memory search and sort, so this
+  is **widget allocation reduction**, not claimed full search virtualization.
+- GtkBuilder accessibility labels give icon-only controls, text editors,
+  filters and counters clear names without a custom AT-SPI bridge. Full Orca
+  and keyboard qualification must still run in the target session.
+- `shell/.../layout.js` owns pure monitor geometry calculations, selected from
+  persisted work-area geometry rather than monitor ID. `extension.js` owns
+  Mutter signals and operations, splits arrangement by each active monitor,
+  and clamps moved/offscreen notes after topology changes. The stored JSON
+  format remains compatible; new records gain optional `monitorArea` metadata.
+- `tools/stickies_backup.py` creates a consistent SQLite backup using the
+  Python stdlib `sqlite3.Connection.backup()` API and includes referenced
+  attachment content. It verifies hashes, UUID-only ZIP paths, SQLite
+  integrity and foreign keys, and restores exclusively to a new private
+  directory. The tool is **offline during restore** and never modifies the
+  running application's database in place. This is not automatic cloud sync.
+- Debian packaging splits the optional GNOME Shell extension from the GTK
+  application and includes the backup executable. Package removal does not
+  delete the user's `XDG_DATA_HOME` note directory. No shared library ABI or
+  external protocol change is introduced.
+
+**Design-pattern review:** GObject signals remain the observer mechanism;
+`NoteRepository` retains one domain-focused persistence facade; the optional
+shell bridge is an adapter across the compositor boundary. The pure
+placement module is a calculation helper, not an unjustified Strategy or
+state-machine framework. The Python recovery CLI is an offline maintenance
+utility; it is not a second runtime repository provider.
+
+**Qualification limits:** Toolchain compilation, package installation, Orca,
+large-window runtime measurements and Mutter multi-monitor behavior must be
+executed in the Debian 13 / Majoris GNOME environment. See
+`docs/stage-4-qualification.md`.

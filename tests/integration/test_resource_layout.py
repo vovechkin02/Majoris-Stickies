@@ -86,6 +86,36 @@ class ResourceLayoutTests(unittest.TestCase):
                              f"majoris-stickies {command}")
             self.assertIn(command, application)
 
+    def test_accessible_control_names(self) -> None:
+        """Require meaningful GTK4 accessible labels on the editor and controls."""
+        required = {
+            "manager-window.ui": {
+                "new_button", "screenshot_button", "arrange_button", "search_entry",
+                "color_filter", "sort_dropdown", "list_toggle", "load_more_button",
+            },
+            "note-window.ui": {
+                "title_entry", "body_view", "color_button", "more_button",
+                "manager_button", "duplicate_button", "delete_button",
+            },
+        }
+        for filename, names in required.items():
+            document = ET.parse(self.data_dir / filename)
+            by_id = {node.get("id"): node for node in document.iter("object")}
+            for name in names:
+                accessible = by_id[name].find("accessibility/property[@name='label']")
+                self.assertIsNotNone(accessible, f"{filename}: {name}")
+                self.assertTrue(accessible.text.strip(), f"{filename}: {name}")
+
+    def test_stage4_card_pagination_contract(self) -> None:
+        """Require a bounded card page and a connected Load More control."""
+        document = ET.parse(self.data_dir / "manager-window.ui")
+        ids = {node.get("id") for node in document.iter("object")}
+        self.assertIn("load_more_button", ids)
+        source = (self.data_dir.parent / "src/gtk/manager-window.vala").read_text()
+        self.assertIn("CARD_PAGE_SIZE = 60", source)
+        self.assertIn("load_more_button.clicked.connect", source)
+        self.assertIn("append_cards (requested_card_count)", source)
+
     def test_palette_css_covers_all_colors(self) -> None:
         """Require a semantic note-paper CSS rule for each palette option."""
         colors = {"yellow", "pink", "green", "blue", "purple", "orange", "teal", "gray"}

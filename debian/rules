@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+
+IMAGEKIT ?= auto
+
+%:
+	dh $@ --buildsystem=meson
+
+override_dh_auto_configure:
+	dh_auto_configure --buildsystem=meson -- -Dimagekit=$(IMAGEKIT) -Dshell_extension=true

@@ -7,6 +7,7 @@ namespace Stickies {
     public class ManagerWindow : Adw.ApplicationWindow {
         private const uint REFRESH_DELAY_MS = 120;
         private const int PREVIEW_CHARACTER_LIMIT = 130;
+        private const int CARD_PAGE_SIZE = 60;
 
         [GtkChild]
         private unowned Gtk.Button new_button;
@@ -29,23 +30,33 @@ namespace Stickies {
         [GtkChild]
         private unowned Gtk.Label empty_label;
         [GtkChild]
+        private unowned Gtk.Button load_more_button;
+        [GtkChild]
         private unowned Adw.ToastOverlay toast_overlay;
 
         private StickiesApp owner;
         private NoteRepository repository;
         private uint refresh_source_id = 0;
+        private Gee.ArrayList<Note> visible_results;
+        private int shown_card_count = 0;
+        private int requested_card_count = CARD_PAGE_SIZE;
 
         /** Creates the manager and subscribes to note collection changes. */
         public ManagerWindow (StickiesApp owner, NoteRepository repository) {
             Object (application: owner);
             this.owner = owner;
             this.repository = repository;
+            visible_results = new Gee.ArrayList<Note> ();
 
+            load_more_button.clicked.connect (load_more_cards);
             new_button.clicked.connect (() => owner.create_and_open_note ());
             screenshot_button.clicked.connect (() => owner.capture_screenshot ());
             initialize_filters ();
             create_arrangement_menu ();
-            search_entry.search_changed.connect (queue_refresh);
+            search_entry.search_changed.connect (() => {
+                requested_card_count = CARD_PAGE_SIZE;
+                queue_refresh ();
+            });
             repository.note_added.connect (on_note_changed);
             repository.note_updated.connect (on_note_changed);
             repository.note_deleted.connect (on_note_deleted);
@@ -65,9 +76,9 @@ namespace Stickies {
             sort_dropdown.model = new Gtk.StringList ({
                 "Recently Edited", "Oldest Edited", "Title A–Z", "Color"
             });
-            color_filter.notify["selected"].connect ((property) => queue_refresh ());
-            sort_dropdown.notify["selected"].connect ((property) => queue_refresh ());
-            list_toggle.toggled.connect (queue_refresh);
+            color_filter.notify["selected"].connect ((property) => reset_card_page ());
+            sort_dropdown.notify["selected"].connect ((property) => reset_card_page ());
+            list_toggle.toggled.connect (reset_card_page);
         }
 
         /** Exposes compositor-controlled arrangements without showing menu icons. */
@@ -117,49 +128,69 @@ namespace Stickies {
             });
         }
 
-        /** Rebuilds the visible card list from a sorted repository snapshot. */
+        /** Resets pagination when the view's selection changes. */
+        private void reset_card_page () {
+            requested_card_count = CARD_PAGE_SIZE;
+            queue_refresh ();
+        }
+
+        /** Rebuilds only the currently requested cards, not the entire collection. */
         private void refresh_cards () {
             notes_flow.remove_all ();
-
-            var results = repository.search_notes (search_entry.text);
+            shown_card_count = 0;
+            visible_results = repository.search_notes (search_entry.text);
             var colors = NotePalette.all_colors ();
             uint selected_color = color_filter.selected;
             if (selected_color > 0 && selected_color <= (uint) colors.length) {
                 var chosen = colors[(int) selected_color - 1];
-                for (int index = results.size - 1; index >= 0; index--) {
-                    if (results[index].color != chosen) {
-                        results.remove_at (index);
+                for (int index = visible_results.size - 1; index >= 0; index--) {
+                    if (visible_results[index].color != chosen) {
+                        visible_results.remove_at (index);
                     }
                 }
             }
             switch (sort_dropdown.selected) {
                 case 1:
-                    results.sort ((a, b) => a.updated_at_us < b.updated_at_us ? -1 :
+                    visible_results.sort ((a, b) => a.updated_at_us < b.updated_at_us ? -1 :
                         (a.updated_at_us > b.updated_at_us ? 1 : 0));
                     break;
                 case 2:
-                    results.sort ((a, b) => a.title.collate (b.title));
+                    visible_results.sort ((a, b) => a.title.collate (b.title));
                     break;
                 case 3:
-                    results.sort ((a, b) => a.color.collate (b.color));
+                    visible_results.sort ((a, b) => a.color.collate (b.color));
                     break;
                 default:
                     break;
             }
             notes_flow.max_children_per_line = list_toggle.active ? 1 : 3;
-            foreach (var note in results) {
-                notes_flow.insert (create_note_card (note), -1);
-            }
-
-            count_label.label = "%d note%s".printf (
-                results.size, results.size == 1 ? "" : "s"
-            );
-            empty_label.visible = results.size == 0;
-            if (results.size == 0 && search_entry.text.strip () != "") {
+            append_cards (requested_card_count);
+            empty_label.visible = visible_results.size == 0;
+            if (visible_results.size == 0 && search_entry.text.strip () != "") {
                 empty_label.label = "No notes match your search.";
             } else {
                 empty_label.label = "No notes yet. Create your first note with the + button.";
             }
+        }
+
+        /** Adds the next bounded page without recreating earlier cards. */
+        private void load_more_cards () {
+            requested_card_count += CARD_PAGE_SIZE;
+            append_cards (requested_card_count);
+        }
+
+        /** Creates at most the requested number of note cards. */
+        private void append_cards (int requested_count) {
+            int last_index = requested_count < visible_results.size ?
+                requested_count : visible_results.size;
+            for (int index = shown_card_count; index < last_index; index++) {
+                notes_flow.insert (create_note_card (visible_results[index]), -1);
+            }
+            shown_card_count = last_index;
+            load_more_button.visible = last_index < visible_results.size;
+            count_label.label = visible_results.size == last_index ?
+                "%d note%s".printf (visible_results.size, visible_results.size == 1 ? "" : "s") :
+                "Showing %d of %d notes".printf (last_index, visible_results.size);
         }
 
         /** Builds one paper-colored card with distinct open, copy, and delete actions. */

@@ -14,36 +14,54 @@
               <object class="GtkButton" id="manager_button">
                 <property name="icon-name">view-list-symbolic</property>
                 <property name="tooltip-text">All Notes</property>
+                <accessibility>
+                  <property name="label">Show all notes</property>
+                </accessibility>
               </object>
             </child>
             <child type="end">
               <object class="GtkMenuButton" id="color_button">
                 <property name="icon-name">applications-graphics-symbolic</property>
                 <property name="tooltip-text">Note Color</property>
+                <accessibility>
+                  <property name="label">Choose note paper color</property>
+                </accessibility>
               </object>
             </child>
             <child type="end">
               <object class="GtkButton" id="screenshot_button">
                 <property name="icon-name">camera-photo-symbolic</property>
                 <property name="tooltip-text">Attach Screenshot</property>
+                <accessibility>
+                  <property name="label">Capture screenshot into this note</property>
+                </accessibility>
               </object>
             </child>
             <child type="end">
               <object class="GtkButton" id="duplicate_button">
                 <property name="icon-name">edit-copy-symbolic</property>
                 <property name="tooltip-text">Duplicate Note</property>
+                <accessibility>
+                  <property name="label">Duplicate this note</property>
+                </accessibility>
               </object>
             </child>
             <child type="end">
               <object class="GtkButton" id="delete_button">
                 <property name="icon-name">user-trash-symbolic</property>
                 <property name="tooltip-text">Delete Note</property>
+                <accessibility>
+                  <property name="label">Delete this note</property>
+                </accessibility>
               </object>
             </child>
             <child type="end">
               <object class="GtkMenuButton" id="more_button">
                 <property name="icon-name">open-menu-symbolic</property>
                 <property name="tooltip-text">Note Options</property>
+                <accessibility>
+                  <property name="label">More note actions</property>
+                </accessibility>
               </object>
             </child>
           </object>
@@ -63,6 +81,9 @@
                 <property name="margin-top">12</property>
                 <property name="hexpand">True</property>
                 <property name="has-frame">False</property>
+                <accessibility>
+                  <property name="label">Note title</property>
+                </accessibility>
               </object>
             </child>
             <child>
@@ -82,6 +103,9 @@
                         <style>
                           <class name="flat" />
                         </style>
+                        <accessibility>
+                          <property name="label">Bold formatting</property>
+                        </accessibility>
                       </object>
                     </child>
                     <child>
@@ -91,6 +115,9 @@
                         <style>
                           <class name="flat" />
                         </style>
+                        <accessibility>
+                          <property name="label">Italic formatting</property>
+                        </accessibility>
                       </object>
                     </child>
                     <child>
@@ -100,6 +127,9 @@
                         <style>
                           <class name="flat" />
                         </style>
+                        <accessibility>
+                          <property name="label">Underline formatting</property>
+                        </accessibility>
                       </object>
                     </child>
                     <child>
@@ -109,6 +139,9 @@
                         <style>
                           <class name="flat" />
                         </style>
+                        <accessibility>
+                          <property name="label">Strikethrough formatting</property>
+                        </accessibility>
                       </object>
                     </child>
                     <child>
@@ -118,6 +151,9 @@
                         <style>
                           <class name="flat" />
                         </style>
+                        <accessibility>
+                          <property name="label">Monospace formatting</property>
+                        </accessibility>
                       </object>
                     </child>
                     <child>
@@ -127,6 +163,9 @@
                         <style>
                           <class name="flat" />
                         </style>
+                        <accessibility>
+                          <property name="label">Increase selected text size</property>
+                        </accessibility>
                       </object>
                     </child>
                     <child>
@@ -136,6 +175,9 @@
                         <style>
                           <class name="flat" />
                         </style>
+                        <accessibility>
+                          <property name="label">Decrease selected text size</property>
+                        </accessibility>
                       </object>
                     </child>
                   </object>
@@ -155,6 +197,9 @@
                     <property name="bottom-margin">4</property>
                     <property name="accepts-tab">True</property>
                     <property name="tooltip-text">Note text, saved automatically</property>
+                    <accessibility>
+                      <property name="label">Note body, saved automatically</property>
+                    </accessibility>
                   </object>
                 </child>
               </object>
@@ -167,6 +212,9 @@
                 <property name="halign">start</property>
                 <property name="margin-start">12</property>
                 <property name="visible">False</property>
+                <accessibility>
+                  <property name="label">Open this note’s linked source</property>
+                </accessibility>
               </object>
             </child>
             <child>

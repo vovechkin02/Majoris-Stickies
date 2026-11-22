@@ -1,0 +1,25 @@
+Majoris Stickies for Debian 13 / Majoris OS
+=======================================
+
+Build with dpkg-buildpackage -b -us -uc on a clean Debian 13 system. The
+main package does not require a Majoris ImageKit development dependency;
+standard rich text and attachment file cards remain available when it is
+absent. The package recipes use -Dimagekit=auto so a compatible installed
+Majoris ImageKit interface provides native image previews. Majoris ISO builds
+can require the dependency explicitly with:
+
+    IMAGEKIT=enabled dpkg-buildpackage -b -us -uc
+
+Only do so after installing the compatible ImageKit development package.
+
+The optional extension is installed as a separate package. It is not enabled
+system-wide by the package maintainer: enabling and testing the extension
+must follow Majoris GNOME Shell policy for the shipped desktop version.
+The extension advertises Shell 48–50 but has not been runtime-qualified.
+
+Personal note data is stored under ~/.local/share/majoris/stickies. Debian
+package installation and removal must not modify that directory.
+
+Before an OS image release, replace the example.invalid package maintainer
+address with the actual owning packaging contact and qualify binaries,
+AppStream metadata, the desktop launcher, shell ABI and the save/recovery flow.

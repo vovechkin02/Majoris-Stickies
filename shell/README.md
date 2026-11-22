@@ -26,3 +26,16 @@ restores compositor-managed positions from a local JSON snapshot at
 to the current work area. This path and its data format are private to the
 extension, not a published application API. Validate the extension on the exact
 Majoris GNOME Shell build before enabling the Meson install option.
+
+## Stage 4 multi-monitor behavior
+
+`layout.js` is a pure geometry module used by `extension.js`. It selects a
+surviving monitor using persisted monitor work-area overlap and clamps window
+rectangles to the actual usable area. Grid/cascade arrangements are calculated
+separately per monitor, including screens to the left of the primary display.
+The extension responds to display topology changes by moving notes that would
+otherwise be fully offscreen. Existing saved layouts lacking `monitorArea`
+are still accepted.
+
+The optional integration is **not qualified solely by Node.js geometry tests**;
+run `docs/stage-4-qualification.md` on the shipping GNOME Shell version.

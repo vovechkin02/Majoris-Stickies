@@ -15,7 +15,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates git build-essential meson ninja-build valac python3 \
             libglib2.0-dev libgee-0.8-dev libgtk-4-dev libadwaita-1-dev \
-            libsqlite3-dev
+            libsqlite3-dev nodejs
       - name: Check out source
         uses: actions/checkout@v4
       - name: Configure
@@ -24,3 +24,13 @@ jobs:
         run: meson compile -C build
       - name: Run tests
         run: meson test -C build --print-errorlogs
+      - name: Static documentation coverage
+        run: python3 tools/check_source_docs.py
+      - name: Backup and recovery tests
+        run: python3 -m unittest discover -s tests/recovery -p 'test_*.py'
+      - name: Native build and install staging
+        run: meson install -C build --destdir "$PWD/stage"
+      - name: Shell JavaScript validation
+        run: |
+          node --check shell/majoris-stickies@majoris.org/extension.js
+          node --experimental-default-type=module tests/integration/test_layout.mjs

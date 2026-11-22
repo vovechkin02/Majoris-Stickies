@@ -1,6 +1,8 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import {arrangeRects, chooseWorkArea, clampRect, validRectangle} from './layout.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const APPLICATION_ID = 'com.majoris.stickies';
@@ -41,6 +43,9 @@ export default class StickiesExtension extends Extension {
                 return GLib.SOURCE_REMOVE;
             });
         });
+        this._monitorsChangedId = Main.layoutManager.connect('monitors-changed', () => {
+            this._reconcileMonitors();
+        });
         this._exportedObject = Gio.DBusExportedObject.wrapJSObject(INTERFACE_XML, this);
         this._exportedObject.export(Gio.DBus.session, OBJECT_PATH);
     }
@@ -53,6 +58,7 @@ export default class StickiesExtension extends Extension {
             this._saveSource = 0;
         }
         global.display.disconnect(this._windowCreatedId);
+        Main.layoutManager.disconnect(this._monitorsChangedId);
         for (const tracked of this._tracked.values()) {
             for (const signalId of tracked.signals) {
                 tracked.window.disconnect(signalId);
@@ -112,6 +118,39 @@ export default class StickiesExtension extends Extension {
                 window.get_title()?.endsWith(' — Stickies'));
     }
 
+    /** Enumerate compositor work areas without assuming one active display. */
+    _workAreas() {
+        const workspace = global.workspace_manager.get_active_workspace();
+        const areas = [];
+        for (let index = 0; index < global.display.get_n_monitors(); index++) {
+            const area = workspace.get_work_area_for_monitor(index);
+            areas.push({index, x: area.x, y: area.y,
+                width: area.width, height: area.height});
+        }
+        return areas;
+    }
+
+    /** Keep registered notes reachable when display topology changes. */
+    _reconcileMonitors() {
+        const areas = this._workAreas();
+        for (const tracked of this._tracked.values()) {
+            const rect = tracked.window.get_frame_rect();
+            if (areas.some(area => validRectangle(rect) &&
+                // A visible part of the titlebar is enough to keep the note there.
+                rect.x < area.x + area.width && rect.x + rect.width > area.x &&
+                rect.y < area.y + area.height && rect.y + 85 > area.y)) {
+                continue;
+            }
+            const area = chooseWorkArea(this._layouts[tracked.noteId],
+                areas, tracked.window.get_monitor());
+            const placement = area ? clampRect(rect, area) : null;
+            if (placement) {
+                tracked.window.move_resize_frame(true, placement.x, placement.y,
+                    placement.width, placement.height);
+            }
+        }
+    }
+
     _findWindow(windowId) {
         const suffix = `/${windowId}`;
         return this._noteWindows().find(window =>
@@ -127,8 +166,11 @@ export default class StickiesExtension extends Extension {
         if (rect.width < 240 || rect.height < 85) {
             return;
         }
+        const area = this._workAreas().find(entry =>
+            entry.index === tracked.window.get_monitor());
         this._layouts[tracked.noteId] = {
             x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+            monitorArea: area ?? null,
         };
         this._queueSave();
     }
@@ -149,15 +191,12 @@ export default class StickiesExtension extends Extension {
                 continue;
             }
             const saved = this._layouts[registration.noteId];
-            if (saved && [saved.x, saved.y, saved.width, saved.height]
-                .every(value => Number.isFinite(value))) {
-                const area = global.workspace_manager.get_active_workspace()
-                    .get_work_area_for_monitor(window.get_monitor());
-                const width = Math.min(area.width, Math.max(240, saved.width));
-                const height = Math.min(area.height, Math.max(85, saved.height));
-                const x = Math.max(area.x, Math.min(saved.x, area.x + area.width - width));
-                const y = Math.max(area.y, Math.min(saved.y, area.y + area.height - height));
-                window.move_resize_frame(true, x, y, width, height);
+            if (validRectangle(saved)) {
+                const area = chooseWorkArea(saved, this._workAreas(), window.get_monitor());
+                const rect = area ? clampRect(saved, area) : null;
+                if (rect) {
+                    window.move_resize_frame(true, rect.x, rect.y, rect.width, rect.height);
+                }
             }
             if (registration.floating) {
                 window.make_above();
@@ -215,35 +254,28 @@ export default class StickiesExtension extends Extension {
         if (tokens.length > MAX_WINDOWS || tokens.some(token => !/^\d{1,10}$/.test(token))) {
             throw new Error('Invalid window identifiers');
         }
-        const windows = tokens.map(token => this._findWindow(Number(token)))
+        const windows = tokens
+            .map(token => Number(token))
+            .filter(windowId => this._registered.has(windowId))
+            .map(windowId => this._findWindow(windowId))
             .filter(window => window !== undefined && window !== null);
         if (windows.length === 0) {
             return;
         }
-        const workspace = global.workspace_manager.get_active_workspace();
-        const area = workspace.get_work_area_for_monitor(windows[0].get_monitor());
-        const gap = 12;
-        const columns = Math.min(windows.length,
-            Math.max(1, Math.floor(area.width / (240 + gap))));
-        const rows = Math.ceil(windows.length / columns);
-        windows.forEach((window, index) => {
-            if (window.is_maximized()) {
-                window.unmaximize(Meta.MaximizeFlags.BOTH);
-            }
-            if (mode === 'cascade') {
-                const width = Math.min(400, area.width - 2 * gap);
-                const height = Math.min(340, area.height - 2 * gap);
-                const x = area.x + gap + (index * 32) % Math.max(1, area.width - width - gap);
-                const y = area.y + gap + (index * 32) % Math.max(1, area.height - height - gap);
-                window.move_resize_frame(true, x, y, width, height);
-                return;
-            }
-            const width = Math.floor((area.width - gap * (columns + 1)) / columns);
-            const height = Math.floor((area.height - gap * (rows + 1)) / rows);
-            const x = area.x + gap + (index % columns) * (width + gap);
-            const y = area.y + gap + Math.floor(index / columns) * (height + gap);
-            window.move_resize_frame(true, x, y, width, height);
-        });
+        const areas = this._workAreas();
+        for (const area of areas) {
+            const group = windows.filter(window => window.get_monitor() === area.index);
+            const placements = arrangeRects(group.length, area, mode);
+            group.forEach((window, index) => {
+                if (window.is_maximized()) {
+                    window.unmaximize(Meta.MaximizeFlags.BOTH);
+                }
+                const rect = placements[index];
+                if (rect) {
+                    window.move_resize_frame(true, rect.x, rect.y, rect.width, rect.height);
+                }
+            });
+        }
         this._recordAllPositions();
     }
 }

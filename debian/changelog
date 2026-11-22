@@ -1,0 +1,8 @@
+majoris-stickies (0.4.0-1) unstable; urgency=medium
+
+  * Stage 4: bounded manager rendering and GNOME multi-monitor layout fixes.
+  * Add offline SQLite and attachment backup, verification and restore.
+  * Improve keyboard and screen-reader labels, save retries and store checks.
+  * Split optional GNOME Shell integration into its own Debian package.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Sun, 22 Nov 2026 12:00:00 +1100

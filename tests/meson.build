@@ -41,3 +41,37 @@ test(
          meson.project_source_root() / 'data'],
   suite: 'integration',
 )
+
+stage4_unit_executable = executable(
+  'test-stage4',
+  [core_sources, files('unit/test-stage4.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 4 integrity and collection limits', stage4_unit_executable, suite: 'unit')
+
+test(
+  'Offline backup and restore',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/recovery', '-p', 'test_*.py'],
+  suite: 'integration',
+)
+
+node = find_program('node', required: false)
+if node.found()
+  test(
+    'Shell multi-monitor layout calculations',
+    node,
+    args: ['--experimental-default-type=module',
+           meson.project_source_root() / 'tests/integration/test_layout.mjs'],
+    suite: 'integration',
+  )
+endif
+
+test(
+  'Engineering source documentation coverage',
+  python,
+  args: [meson.project_source_root() / 'tools/check_source_docs.py'],
+  suite: 'integration',
+)

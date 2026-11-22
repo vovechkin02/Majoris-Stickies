@@ -4,9 +4,9 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.3.0 (Stage 3 source implementation)  
-**Status:** Pre-release; Vala compilation, native GUI and GNOME Shell integration have
-not been qualified in the packaging environment  
+**Version:** 0.4.0 (Stage 4 source implementation)  
+**Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
+and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
 **Application ID:** `com.majoris.stickies`  
 **Executable:** `majoris-stickies`
@@ -77,6 +77,26 @@ Stage 3 adds:
 - **Persistence:** transactional SQLite v2→v3 migration adds source URLs while
   retaining earlier note IDs, rich-text spans and window preferences.
 
+Stage 4 adds:
+
+- **Accessible interface:** XML-declared accessible names for icon-only actions,
+  note title/body, filtering, search, and the manager's result controls.
+- **Scalable manager:** Only the first 60 matching note cards are constructed;
+  subsequent pages load on request. Search, filter and sort changes reset the
+  page, while note edits preserve the requested number of visible cards.
+- **Recovery:** `majoris-stickies-backup` creates SQLite-consistent ZIP backups
+  including managed attachments and saved window positions; `verify` checks hashes, SQL integrity and
+  attachment references; `restore` writes into a **new** directory, never
+  silently overwriting an existing user database.
+- **Persistence:** SQLite quick-check before migrations, limited write retries
+  with backoff, and previously established dirty-state retention on failure.
+- **Multi-monitor:** The optional extension restores notes to surviving monitor
+  work areas, clamps offscreen positions, handles topology changes, and
+  arranges notes separately on each monitor.
+- **Packaging:** Meson installation for the recovery tool and Debian package
+  recipes for the application and optional Shell extension. The schema stays
+  at v3; no data migration is needed from Stage 3.
+
 **Not yet implemented:** RTF/RTFD import/export, arbitrary font selection,
 full font-size controls, numbered/bulleted lists, inline PDF page rendering,
 true transparent toplevel windows, multi-monitor placement qualification,
@@ -138,8 +158,22 @@ GTK4 package. `-Dshell_extension=true` installs the optional extension files
 in the configured system data directory. Enabling the extension is a separate
 GNOME Shell operation, documented in [shell/README.md](shell/README.md).
 
-There is no Debian source-package metadata yet; these commands produce and
-install a Meson application, not a `.deb`.
+The source also includes Debian packaging metadata for separate application
+and GNOME Shell extension packages. On Debian 13 with build dependencies:
+
+```sh
+dpkg-buildpackage -b -us -uc
+```
+
+Debian packaging uses `-Dimagekit=auto` to retain Majoris Image previews when
+its GTK4 development interface is installed. For a Majoris ISO builder that
+requires image previews, use `IMAGEKIT=enabled dpkg-buildpackage -b -us -uc`
+after installing the compatible Majoris Image development package.
+
+**Release gate:** Replace the explicit placeholder packaging maintainer contact,
+then inspect packages with Lintian, install/remove tests, and validate the
+GNOME Shell extension against the Majoris desktop build. No `.deb` has been
+compiled or qualified in the current environment.
 
 ## Usage
 
@@ -169,13 +203,32 @@ false successful floating state.
 - The schema uses `PRAGMA user_version=3` and upgrades Stage 1 and Stage 2 schemas
   in-place, preserving note IDs and existing content. Databases from newer
   versions are rejected rather than overwritten.
-- Back up the **entire directory** after Stickies has exited, to include
-  attachments, the database and any WAL/SHM files. A database file alone is
-  not a complete note backup when files are attached.
+- The installed `majoris-stickies-backup` command creates a consistent
+  SQLite snapshot (including committed WAL transactions) and bundles all
+  referenced attachments. It can run while Stickies is editing notes;
+  unsaved in-memory changes remain subject to the normal autosave interval.
+- Back up a copy of the entire data directory if recovering manually; a bare
+  `.db` may omit both attachment files and uncheckpointed WAL transactions.
+  For a controlled backup, use the utility described below.
 
 Closing a note window does not delete the note; deleting a note is permanent
 and asks for confirmation. A normal note close records the note as no longer
 visible. A forced crash can leave a saved visible state to reopen next time.
+
+### Back up and restore
+
+```sh
+majoris-stickies-backup backup ~/stickies-backup.zip
+majoris-stickies-backup verify ~/stickies-backup.zip
+# Quit Stickies before restoration; use a new directory to inspect contents.
+majoris-stickies-backup restore ~/stickies-backup.zip ~/stickies-restored
+```
+
+The restore command **refuses to overwrite** an existing directory. After
+checking restored notes and attachments, stop Stickies and manually move the
+original application data directory aside before installing the restored data.
+The backup archive contains private notes and must be protected accordingly.
+The utility requires only Python 3 with standard-library SQLite support.
 
 ## Architecture and API
 
@@ -202,12 +255,17 @@ The Shell D-Bus endpoint is a private integration contract; see its README.
 - UTF-8 imports reject oversized files, NUL bytes and invalid encoding.
 - Formatting runs are bounded, validated and applied using Unicode character
   offsets; corrupted style strings are discarded rather than executed.
-- Failed SQL flushes preserve dirty state and normal window close is blocked
-  until the user can recover, instead of falsely reporting a successful save.
+- Failed SQL flushes preserve dirty state, trigger at most three short
+  exponential retries per edit, and block normal note-window close until
+  saving succeeds. Database integrity is checked before attempting migrations.
+- Backup archives are SHA-256 verified, bounded, restricted to validated
+  UUID filenames, and can only restore to a fresh directory.
 - Shell actions are limited to recognized Stickies note windows. Compositor
   methods remain **unqualified** pending deployment on the target Shell.
-- Large collections and large note bodies can still cause main-context SQLite
-  and text formatting latency. Profile real workloads before optimizing.
+- A manager refresh constructs at most the requested page of note cards;
+  matching and sorting still scan in-memory notes. Large note bodies can
+  cause main-context SQLite and text formatting latency. Profile real workloads
+  before optimizing further.
 
 ## Testing and qualification
 
@@ -215,20 +273,25 @@ The Shell D-Bus endpoint is a private integration contract; see its README.
 meson test -C build --print-errorlogs
 python3 tests/integration/test_resource_layout.py data
 node --check shell/majoris-stickies@majoris.org/extension.js
+node --experimental-default-type=module tests/integration/test_layout.mjs
+python3 -m unittest discover -s tests/recovery -p 'test_*.py'
+python3 tools/check_source_docs.py
 ```
 
 Vala unit tests cover Stage 1 CRUD/search, Stage 2 formatting and migrations,
-and Stage 3 source URL validation, persistence, search, and clipboard export.
-Python tests verify UI resources and template fields.
+Stage 3 source URL validation, persistence, search and clipboard export, and
+Stage 4 database integrity and large-collection behavior. Python tests verify
+UI resources, accessibility annotations, and seven backup/recovery cases. A
+separate pure-JavaScript suite checks multi-monitor placement geometry.
 
-**For this archive:** Python resource integration tests passed (7 tests), and
-XML/JSON source files parsed. Vala unit tests, Meson build, GTK rendering,
-ImageKit integration, and compositor behavior have **not been run**: this
-packaging environment lacks `valac`, Meson, GTK4 and libadwaita development
-packages and cannot fetch them.
+**For this archive:** resource XML, backup/restore and shell layout tests
+run in the available tools. Meson, Vala unit tests, native GTK rendering,
+ImageKit, actual compositor behavior, and Debian package builds **have not
+been run**: this environment has no Vala/GTK/libadwaita build toolchain.
+Static checks do not establish native compilation or runtime correctness.
 
 Further details and required target-machine checks are recorded in
-[Stage 3 qualification](docs/stage-3-qualification.md). Do not label this
+[Stage 4 qualification](docs/stage-4-qualification.md). Do not label this
 source release as compiled, runtime-qualified or complete macOS parity.
 
 ## Contributing and license
@@ -240,5 +303,7 @@ ownership, and XML layout policy. See [CONTRIBUTING.md](CONTRIBUTING.md).
 GPL-3.0-or-later; see [LICENSE](LICENSE). Original source is distributed,
 without bundling third-party binaries, image assets or Majoris Image itself.
 
-Stage 3 compatibility and manual screenshot/clipboard qualification are tracked
-in [docs/stage-3-qualification.md](docs/stage-3-qualification.md).
+Stage-specific changes and required acceptance checks are recorded in
+[Stage 4 qualification](docs/stage-4-qualification.md). Earlier Stage 3
+screenshots and clipboard behavior remain documented in
+[Stage 3 qualification](docs/stage-3-qualification.md).

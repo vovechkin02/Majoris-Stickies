@@ -11,6 +11,7 @@ namespace Stickies {
     public class NoteRepository : GLib.Object {
         private const uint AUTOSAVE_DELAY_MS = 500;
         private const int BUSY_TIMEOUT_MS = 200;
+        private const uint MAX_SAVE_RETRIES = 3;
         private const int64 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
         private Sqlite.Database database;
@@ -18,6 +19,7 @@ namespace Stickies {
         private Gee.HashMap<string, Note> notes;
         private Gee.HashSet<string> dirty_ids;
         private Gee.HashMap<string, uint> save_sources;
+        private Gee.HashMap<string, uint> retry_counts;
 
         /** Emitted immediately after a note is added to the repository. */
         public signal void note_added (Note note);
@@ -48,6 +50,7 @@ namespace Stickies {
             notes = new Gee.HashMap<string, Note> ();
             dirty_ids = new Gee.HashSet<string> ();
             save_sources = new Gee.HashMap<string, uint> ();
+            retry_counts = new Gee.HashMap<string, uint> ();
 
             if (database_path != ":memory:") {
                 var directory = GLib.Path.get_dirname (database_path);
@@ -66,6 +69,7 @@ namespace Stickies {
             database.busy_timeout (BUSY_TIMEOUT_MS);
             execute ("PRAGMA journal_mode=WAL;");
             execute ("PRAGMA foreign_keys=ON;");
+            verify_integrity ();
             initialize_schema ();
             load_notes ();
         }
@@ -329,6 +333,7 @@ namespace Stickies {
 
             cancel_save (id);
             dirty_ids.remove (id);
+            retry_counts.unset (id);
             notes.unset (id);
             // Files are unlinked after the committed database deletion. A failure
             // leaves an orphan, never an attachment record pointing to deleted data.
@@ -357,6 +362,7 @@ namespace Stickies {
 
             save_note (note);
             dirty_ids.remove (id);
+            retry_counts.unset (id);
             note_saved (note);
         }
 
@@ -391,6 +397,7 @@ namespace Stickies {
         private void queue_save (Note note) {
             dirty_ids.add (note.id);
             cancel_save (note.id);
+            retry_counts.unset (note.id);
             var id = note.id;
             uint source_id = GLib.Timeout.add (AUTOSAVE_DELAY_MS, () => {
                 save_sources.unset (id);
@@ -398,12 +405,49 @@ namespace Stickies {
                     flush_note (id);
                 } catch (Error error) {
                     save_failed (id, error.message);
+                    schedule_save_retry (id);
                 }
 
                 return GLib.Source.REMOVE;
             });
             save_sources.set (id, source_id);
             note_updated (note);
+        }
+
+        /** Retries temporary write failures with a strict exponential limit. */
+        private void schedule_save_retry (string id) {
+            if (!dirty_ids.contains (id) || save_sources.has_key (id)) {
+                return;
+            }
+            uint attempts = retry_counts.has_key (id) ? retry_counts.get (id) : 0;
+            if (attempts >= MAX_SAVE_RETRIES) {
+                return;
+            }
+            uint delay_seconds = (uint) 2 << attempts;
+            retry_counts.set (id, attempts + 1);
+            uint source_id = GLib.Timeout.add_seconds (delay_seconds, () => {
+                save_sources.unset (id);
+                try {
+                    flush_note (id);
+                } catch (Error error) {
+                    save_failed (id, error.message);
+                    schedule_save_retry (id);
+                }
+                return GLib.Source.REMOVE;
+            });
+            save_sources.set (id, source_id);
+        }
+
+        /** Refuses to migrate or load a damaged database without modifying it. */
+        private void verify_integrity () throws Error {
+            Sqlite.Statement statement;
+            prepare ("PRAGMA quick_check(1)", out statement);
+            if (statement.step () != Sqlite.ROW || statement.column_text (0) != "ok") {
+                throw new IOError.INVALID_DATA (
+                    "The notes database failed its integrity check. " +
+                    "Restore a verified backup while Stickies is closed."
+                );
+            }
         }
 
         /** Cancels one pending source, if it has not already fired. */
