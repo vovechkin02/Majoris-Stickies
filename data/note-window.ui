@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <interface>
-  <requires lib="gtk" version="4.0"/>
-  <requires lib="Adw" version="1.0"/>
+  <requires lib="gtk" version="4.0" />
+  <requires lib="Adw" version="1.0" />
   <template class="StickiesNoteWindow" parent="AdwApplicationWindow">
     <property name="title">Note — Stickies</property>
     <property name="default-width">370</property>
@@ -34,6 +34,12 @@
                 <property name="tooltip-text">Delete Note</property>
               </object>
             </child>
+            <child type="end">
+              <object class="GtkMenuButton" id="more_button">
+                <property name="icon-name">open-menu-symbolic</property>
+                <property name="tooltip-text">Note Options</property>
+              </object>
+            </child>
           </object>
         </child>
         <property name="content">
@@ -55,6 +61,83 @@
             </child>
             <child>
               <object class="GtkScrolledWindow">
+                <property name="hscrollbar-policy">automatic</property>
+                <property name="vscrollbar-policy">never</property>
+                <property name="min-content-height">38</property>
+                <child>
+                  <object class="GtkBox" id="format_toolbar">
+                    <property name="spacing">2</property>
+                    <property name="margin-start">10</property>
+                    <property name="margin-end">10</property>
+                    <child>
+                      <object class="GtkButton" id="bold_button">
+                        <property name="label">B</property>
+                        <property name="tooltip-text">Bold (Ctrl+B)</property>
+                        <style>
+                          <class name="flat" />
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="italic_button">
+                        <property name="label">I</property>
+                        <property name="tooltip-text">Italic (Ctrl+I)</property>
+                        <style>
+                          <class name="flat" />
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="underline_button">
+                        <property name="label">U</property>
+                        <property name="tooltip-text">Underline (Ctrl+U)</property>
+                        <style>
+                          <class name="flat" />
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="strike_button">
+                        <property name="label">S̶</property>
+                        <property name="tooltip-text">Strikethrough</property>
+                        <style>
+                          <class name="flat" />
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="mono_button">
+                        <property name="label">M</property>
+                        <property name="tooltip-text">Monospace font</property>
+                        <style>
+                          <class name="flat" />
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="large_button">
+                        <property name="label">A+</property>
+                        <property name="tooltip-text">Larger font</property>
+                        <style>
+                          <class name="flat" />
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="small_button">
+                        <property name="label">A−</property>
+                        <property name="tooltip-text">Smaller font</property>
+                        <style>
+                          <class name="flat" />
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkScrolledWindow">
                 <property name="vexpand">True</property>
                 <property name="hscrollbar-policy">never</property>
                 <child>
@@ -68,6 +151,14 @@
                     <property name="tooltip-text">Note text, saved automatically</property>
                   </object>
                 </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox" id="attachments_box">
+                <property name="orientation">vertical</property>
+                <property name="spacing">4</property>
+                <property name="margin-start">12</property>
+                <property name="margin-end">12</property>
               </object>
             </child>
             <child>

@@ -19,7 +19,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
       - name: Configure
-        run: meson setup build -Dwarning_level=3
+        run: meson setup build -Dwarning_level=3 -Dimagekit=disabled
       - name: Compile
         run: meson compile -C build
       - name: Run tests

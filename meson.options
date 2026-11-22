@@ -1,0 +1,12 @@
+option(
+  'imagekit',
+  type: 'feature',
+  value: 'auto',
+  description: 'Use installed Majoris Image GTK4 for image attachments',
+)
+option(
+  'shell_extension',
+  type: 'boolean',
+  value: false,
+  description: 'Install optional, compositor-specific GNOME Shell integration',
+)

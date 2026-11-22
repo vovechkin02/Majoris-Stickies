@@ -1,195 +1,216 @@
 # Majoris Stickies
 
-Stickies is a local-first Vala/GTK4/libadwaita desktop application for short notes. Its
-Stage 1 implementation includes a searchable notes manager and separate editor windows.
-It is designed for Majoris OS (Debian 13 and GNOME).
+Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwaita,
+XML UI templates and SQLite. Stickies combines a centralized notes manager with
+independent note windows.
 
-**Version:** 0.1.0 (Stage 1 source implementation)  
-**Status:** Pre-release; no runtime compilation qualification has yet been completed for this archive  
+**Version:** 0.2.0 (Stage 2 source implementation)  
+**Status:** Pre-release; Vala compilation, native GUI and GNOME Shell integration have
+not been qualified in the packaging environment  
 **License:** GPL-3.0-or-later  
 **Application ID:** `com.majoris.stickies`  
 **Executable:** `majoris-stickies`
 
 ## Contents
 
-- [Features](#features)
-- [Supported platforms and integrations](#supported-platforms-and-integrations)
-- [Requirements](#requirements)
+- [Features and scope](#features-and-scope)
+- [Supported platforms and integration](#supported-platforms-and-integration)
+- [Dependencies](#dependencies)
 - [Build and installation](#build-and-installation)
-- [Quick start](#quick-start)
-- [Application interfaces](#application-interfaces)
-- [Architecture](#architecture)
-- [Security and compatibility](#security-and-compatibility)
-- [Testing](#testing)
-- [Documentation and contribution](#documentation-and-contribution)
-- [License](#license)
+- [Usage](#usage)
+- [Data and compatibility](#data-and-compatibility)
+- [Architecture and API](#architecture-and-api)
+- [Security and reliability](#security-and-reliability)
+- [Testing and qualification](#testing-and-qualification)
+- [Contributing and license](#contributing-and-license)
 
-## Features
+## Features and scope
 
-Stage 1 source implements:
+Stage 1 remains supported:
 
-- A central notes manager with color-coded cards, search over titles and bodies, and
-  recently modified notes shown first.
-- Multiple independent, movable and resizable notes, each with a title and plain-text
-  editor. Opening an already-open note brings its editor into focus.
-- New, duplicate, and permanently delete commands (deletion requires confirmation).
-- Eight built-in note-paper colors, shared across the manager and editor windows.
-- SQLite persistence and debounced autosaving after editing; outstanding edits are
-  flushed when editors and the manager close, and save failures are shown rather than
-  silently acknowledged.
-- Automatic restoration of the note collection after application restart. Opening the
-  notes manager does not automatically reopen every previous editor window.
-- Standard Majoris/GTK keyboard shortcuts: Ctrl+N creates a note and Ctrl+F focuses
-  the notes manager's search.
+- Multiple separately editable notes, color palettes, centralized searchable note
+  cards, create, duplicate, permanent delete with confirmation, autosave, and
+  single-instance application behavior.
+- SQLite storage with 500 ms per-note save debounce, save-on-close safeguards,
+  UTF-8 note search, and standard Ctrl+N / Ctrl+F application shortcuts.
 
-**Not yet implemented:** rich text, inline images/PDFs, screenshots, cloud sync,
-archiving/Trash restore, reminders, always-on-top, translucency, collapsed notes, desktop
-window position restoration, GNOME Shell extensions, and collaboration. These are
-outside the Stage 1 scope. Deletion in Stage 1 is permanent.
+Stage 2 adds:
 
-## Supported platforms and integrations
+- **Rich text:** bold, italic, underline, strikethrough, monospace, and two
+  relative size tags; selection-based toolbar and Ctrl+B / Ctrl+I / Ctrl+U.
+  Style intervals persist by Unicode character index, independently of GTK.
+- **Attachments:** attach images and PDFs via the file picker, keep managed
+  copies with stable identifiers, open them externally, or remove them.
+  Image previews use **Majoris Image**'s `ImageKit.ImageView` when its GTK4
+  development package is available at build time. Without it, an icon/file
+  entry is shown. PDF attachments are listed and open in the default PDF app;
+  **inline PDF page previews are not included**.
+- **Import/export:** asynchronous UTF-8 plain-text import (up to 2 MiB) and
+  plain-text export through native file dialogs. Plain-text export does not
+  retain rich-text styles or attachments; a lossless note archive format and
+  RTF/RTFD interchange are not yet implemented.
+- **Desktop-note preferences:** collapsible note paper, translucent paper,
+  last open/closed status, and last noncollapsed window dimensions.
+- **Optional GNOME Shell extension:** verified-note always-on-top and
+  grid/cascade/title/date/color arrangements, plus compositor-owned window
+  coordinate restoration. These features require the separately enabled Shell
+  extension; they are not simulated through unsupported Wayland GTK APIs.
+- **Database migration:** transactional, in-place migration from Stage 1's
+  SQLite schema to Stage 2 without renumbering existing notes.
 
-| Component | Status |
+**Not yet implemented:** RTF/RTFD import/export, arbitrary font selection,
+full font-size controls, numbered/bulleted lists, inline PDF page rendering,
+true transparent toplevel windows, multi-monitor placement qualification,
+external account syncing, screenshots, reminders, or Trash/Archive. The
+translucency toggle changes the paper's opacity, not compositor-wide window
+alpha. Note deletion remains permanent.
+
+## Supported platforms and integration
+
+| Component | Support |
 | --- | --- |
-| Debian 13 / GNOME | Intended native deployment platform; runtime unverified |
-| GTK4 / libadwaita | Native UI templates, no GTK3 compatibility layer |
-| SQLite | Built-in local store; uses WAL for file-backed databases |
-| ImageKitView / Majoris Image | Not linked in Stage 1 (no image-rendering feature) |
-| GNOME Shell integration | Not included in Stage 1 |
-| Internet and account service | Not required |
+| Debian 13 / GNOME | Target platform; native runtime not yet qualified |
+| GTK4 / libadwaita | Declarative GTK4 GUI, majoris-themed note paper |
+| SQLite | Local data; schema v2 with transactional migration |
+| [Majoris Image](https://github.com/vovechkin02/Majoris-Image) | Optional GTK4 dependency; image file previews only |
+| GNOME Shell | Optional extension; targeted at Shell 48–50, unverified in compositor |
+| Internet / account | Not required |
 
-For future attachment and image-preview work, use
-[Majoris Image](https://github.com/vovechkin02/Majoris-Image) and its `ImageKitView`
-GTK4 component instead of implementing a competing image decoder. Avoid forcing
-ImageKit into the Stage 1 text-only dependency graph.
+## Dependencies
 
-## Requirements
+| Dependency | Minimum | Purpose |
+| --- | --- | --- |
+| Meson | 1.0 | Build system |
+| Ninja, C compiler, `valac` | Toolchain compatible with Debian 13 | Build generated sources |
+| GLib / GIO | 2.74 | Persistence, files, D-Bus |
+| GTK4 | 4.16 | Text-buffer editing and undo support |
+| libadwaita | 1.5 | Application windows and dialogs |
+| libgee | 0.20 | Collection models |
+| SQLite | 3.35 | Durable note records |
+| Majoris Image GTK4 (`majoris-image-gtk4-1`) | Optional | File image preview |
 
-Install the Meson, Ninja, Vala, and development packages supplying:
-
-| Dependency | Minimum |
-| --- | --- |
-| Meson | 1.0.0 |
-| GLib/GIO | 2.74 |
-| GTK4 | 4.12 |
-| libadwaita | 1.5 |
-| Gee | 0.20 |
-| SQLite | 3.35 |
-
-The authoritative dependency list is the root [Meson build](meson.build).
-Install a C compiler to compile the generated GResource C source. The default
-font, menus, dialogs, and widget appearance are provided by the installed theme.
+The root `meson.build` is authoritative for build dependencies. The
+GNOME Shell extension is optional and must match the specific installed
+Shell release. It is not linked into the GTK application's process.
 
 ## Build and installation
 
-From the repository root on a system with the dependencies above:
-
 ```sh
-meson setup build
+meson setup build -Dimagekit=auto -Dshell_extension=false
 meson compile -C build
 meson test -C build --print-errorlogs
 ./build/src/majoris-stickies
 ```
 
-Install using your configured prefix:
+Install the desktop application and AppStream metadata:
 
 ```sh
 meson install -C build
 ```
 
-No downloaded build-time assets or network services are required. This repository does
-not currently include Debian source package metadata. Installing via Meson installs
-the executable, application desktop file, and metainfo file. The UI and CSS resources
-are compiled into the executable.
+To build on stock Debian 13 without the optional Majoris Image dependency:
 
-## Quick start
+```sh
+meson setup build -Dimagekit=disabled -Dshell_extension=false
+```
 
-Launch **Stickies** from the applications menu or run `majoris-stickies`.
-Click **+** to create a note. Type its title and body; changes are saved automatically.
-Use the color button to choose a note's paper color. Close the editor to return to the
-manager later. Search notes by title or body in the manager. Duplicate or permanently
-delete notes from either the manager or their windows.
+Set `-Dimagekit=enabled` to require and use an installed compatible ImageKit
+GTK4 package. `-Dshell_extension=true` installs the optional extension files
+in the configured system data directory. Enabling the extension is a separate
+GNOME Shell operation, documented in [shell/README.md](shell/README.md).
 
-The notes database is stored at
-`$XDG_DATA_HOME/majoris/stickies/notes.db`, or
-`~/.local/share/majoris/stickies/notes.db` when `XDG_DATA_HOME` is unset.
-For backups, stop Stickies before copying the SQLite database (and any WAL/SHM files
-if they are present).
+There is no Debian source-package metadata yet; these commands produce and
+install a Meson application, not a `.deb`.
 
-## Application interfaces
+## Usage
 
-The application is single-instance through its `com.majoris.stickies` application ID.
-In Stage 1, there is no stable external D-Bus API, command protocol, plugin API, public
-Vala SDK, or library ABI. The Ctrl+N/Ctrl+F application actions are internal UI
-bindings and are not published cross-process interfaces.
+Launch Stickies from the applications menu or run `majoris-stickies`. The
+manager shows searchable note cards sorted by last edit. Create a note with
+Ctrl+N, select text and apply formatting, choose colors, or use its options
+menu to attach files, import/export text, collapse/expand, toggle translucent
+paper, or request Always on Top. Open previously closed notes from the manager.
 
-## Architecture
+The manager's Arrange menu offers Grid, Cascade, By Title, By Date, and By
+Color. Always on Top and arrangements require the optional extension. If it
+is unavailable, the application reports the error and does not persist a
+false successful floating state.
 
-Core note data and SQLite coordination are intentionally independent of GTK:
+## Data and compatibility
 
-- `src/core/note.vala`: editable note state and timestamp invariants.
-- `src/core/note-palette.vala`: validated, persistent color tokens.
-- `src/core/note-repository.vala`: CRUD, search, SQLite, save timers, GObject signals.
-- `src/gtk/manager-window.vala`: searchable note-card UI.
-- `src/gtk/note-window.vala`: individual note editor, color choices, save status.
-- `src/app/application.vala`: single-instance lifecycle, actions, window registry.
-- `src/app/main.vala`: minimal application entry point.
-- `data/*.ui`: declarative window templates; GResource embeds templates and the
-  semantic note-paper CSS.
+- SQLite database: `$XDG_DATA_HOME/majoris/stickies/notes.db`, defaulting to
+  `~/.local/share/majoris/stickies/notes.db`.
+- Managed copies: sibling `attachments/` directory, with randomized UUID
+  filenames and original display names in SQLite.
+- Shell-managed positions: `window-positions.json` in the same data directory,
+  written only by the optional extension.
+- The schema uses `PRAGMA user_version=2` and upgrades Stage 1's schema
+  in-place, preserving note IDs and existing content. Databases from newer
+  versions are rejected rather than overwritten.
+- Back up the **entire directory** after Stickies has exited, to include
+  attachments, the database and any WAL/SHM files. A database file alone is
+  not a complete note backup when files are attached.
 
-See the current [architecture decision record](docs/architecture.md) for boundaries,
-GoF applicability, SQL schema, and failure behavior.
+Closing a note window does not delete the note; deleting a note is permanent
+and asks for confirmation. A normal note close records the note as no longer
+visible. A forced crash can leave a saved visible state to reopen next time.
 
-## Security and compatibility
+## Architecture and API
 
-SQLite writes are prepared and parameter-bound, not string-interpolated. The
-application data directory is created with mode `0700` where possible. The app never
-requires root access or an online account. Note bodies are plain text, not interpreted
-as markup or executed. The database schema version is tracked through `user_version`.
+`NoteRepository` owns SQL, attachment metadata, note identity and save
+scheduling. `Note` and `NoteFormatting` are GTK-independent. `RichTextCodec`
+translates between GTK text tags and style intervals. `NoteWindow` and
+`ManagerWindow` own XML-defined presentation. `ShellWindowBridge` is an
+optional D-Bus client, while the Shell extension is a separate compositor
+module. The application owns the window registry and startup lifecycle.
 
-The source is currently designed for one running application instance per user.
-Large databases may require a future asynchronous loading and virtualized list path;
-Stage 1 uses short main-context SQLite operations and a debounced card refresh.
-Auto-save errors retain dirty note state and prevent normal editor closure until a
-successful flush. A forced process termination or system crash can still lose the
-most recent unsaved debounce interval; there is no transaction journaling for edits
-outside the SQLite transaction itself.
+See [architecture](docs/architecture.md) for module responsibility, database
+migration, concurrency boundaries, GoF applicability and reliability.
+No stable external Vala/GIR SDK or public cross-process API is provided.
+The Shell D-Bus endpoint is a private integration contract; see its README.
 
-## Testing
+## Security and reliability
 
-With development dependencies installed:
+- SQL queries bind user values; no note body is executed as markup.
+- Local files are copied asynchronously into private storage; source and
+  completed-copy file sizes are bounded at 50 MiB. Notes do not retain
+  arbitrary external file paths for attachments.
+- UTF-8 imports reject oversized files, NUL bytes and invalid encoding.
+- Formatting runs are bounded, validated and applied using Unicode character
+  offsets; corrupted style strings are discarded rather than executed.
+- Failed SQL flushes preserve dirty state and normal window close is blocked
+  until the user can recover, instead of falsely reporting a successful save.
+- Shell actions are limited to recognized Stickies note windows. Compositor
+  methods remain **unqualified** pending deployment on the target Shell.
+- Large collections and large note bodies can still cause main-context SQLite
+  and text formatting latency. Profile real workloads before optimizing.
+
+## Testing and qualification
 
 ```sh
 meson test -C build --print-errorlogs
-```
-
-The unit tests cover note changes, palette validation, persistence across database
-reopens, UTF-8 and quoting, search, duplicate identity, and deletion. The XML
-integration test checks resource entries and controls against GTK template bindings.
-The Python-only static integration test can also run without a GUI/toolchain:
-
-```sh
 python3 tests/integration/test_resource_layout.py data
+node --check shell/majoris-stickies@majoris.org/extension.js
 ```
 
-**Qualification status for this ZIP:** the XML integration test passed (5 cases); SQLite schema/UPSERT SQL syntax
-was also sanity-checked with Python SQLite. The Meson/Vala
-build, GTK runtime, and Vala unit tests were **not run** because the creation environment
-has no Vala compiler, Meson, or GTK/libadwaita development libraries. This archive
-must pass those checks on Debian 13 before being treated as release-ready.
+Vala unit tests cover Stage 1 CRUD/search and Stage 2 formatting, migration,
+rich-text duplication, and persisted presentation state. Python tests verify
+UI resources and template fields.
 
-## Documentation and contribution
+**For this archive:** Python XML integration tests passed (5 tests), the Shell
+JavaScript parsed with `node --check`, and the XML/JSON files parsed. Vala
+unit tests, Meson build, GTK rendering, ImageKit integration, and compositor
+behavior have **not been run**: this packaging environment lacks `valac`,
+Meson, GTK4 and libadwaita development packages and cannot fetch them.
 
-- [Architecture](docs/architecture.md)
-- [Stage 1 implementation notes](docs/stage-1-qualification.md)
-- [Majoris Cross-Project Engineering Standards v1.8](docs/engineering-standards-v1.8.md)
-- [Contribution guidance](CONTRIBUTING.md)
+Further details and required target-machine checks are recorded in
+[Stage 2 qualification](docs/stage-2-qualification.md). Do not label this
+source release as compiled, runtime-qualified or complete macOS parity.
 
-Use American English and meaningful Valadoc for all original source declarations.
-Keep presentation templates in XML; avoid hard-coded app chrome. See the supplied
-engineering standard for testing, GoF, naming, ownership, and release requirements.
+## Contributing and license
 
-## License
+Follow the checked-in [Majoris Engineering Standards v1.8](docs/engineering-standards-v1.8.md)
+for Vala `var`, declaration-level Valadoc, formatting, GoF intent, tests,
+ownership, and XML layout policy. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-GPL-3.0-or-later. See [LICENSE](LICENSE). This original Stage 1 code does not vendor
-external code, image assets, or the Majoris Image library.
+GPL-3.0-or-later; see [LICENSE](LICENSE). Original source is distributed,
+without bundling third-party binaries, image assets or Majoris Image itself.

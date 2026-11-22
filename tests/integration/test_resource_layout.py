@@ -35,7 +35,7 @@ class ResourceLayoutTests(unittest.TestCase):
         self.assertEqual(template.attrib["class"], "StickiesManagerWindow")
         ids = {element.get("id") for element in tree.iter("object")}
         self.assertTrue(
-            {"notes_flow", "new_button", "search_entry", "empty_label", "toast_overlay"}
+            {"notes_flow", "new_button", "arrange_button", "search_entry", "empty_label", "toast_overlay"}
             <= ids
         )
 
@@ -79,6 +79,15 @@ class ResourceLayoutTests(unittest.TestCase):
                 "color_button",
                 "save_label",
                 "delete_button",
+                "more_button",
+                "attachments_box",
+                "bold_button",
+                "italic_button",
+                "underline_button",
+                "strike_button",
+                "mono_button",
+                "large_button",
+                "small_button",
             }
             <= ids
         )

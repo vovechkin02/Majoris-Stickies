@@ -1,0 +1,6 @@
+{
+  "uuid": "majoris-stickies@majoris.org",
+  "name": "Majoris Stickies Window Integration",
+  "description": "Provides narrow window arrangement and always-on-top operations for Majoris Stickies.",
+  "shell-version": ["48", "49", "50"]
+}

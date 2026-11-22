@@ -11,6 +11,8 @@ namespace Stickies {
         [GtkChild]
         private unowned Gtk.Button new_button;
         [GtkChild]
+        private unowned Gtk.MenuButton arrange_button;
+        [GtkChild]
         private unowned Gtk.SearchEntry search_entry;
         [GtkChild]
         private unowned Gtk.FlowBox notes_flow;
@@ -30,6 +32,7 @@ namespace Stickies {
             this.repository = repository;
 
             new_button.clicked.connect (() => owner.create_and_open_note ());
+            create_arrangement_menu ();
             search_entry.search_changed.connect (queue_refresh);
             repository.note_added.connect (on_note_changed);
             repository.note_updated.connect (on_note_changed);
@@ -37,6 +40,30 @@ namespace Stickies {
             repository.save_failed.connect (on_save_failed);
             this.close_request.connect (on_close_request);
             refresh_cards ();
+        }
+
+        /** Exposes compositor-controlled arrangements without showing menu icons. */
+        private void create_arrangement_menu () {
+            var popover = new Gtk.Popover ();
+            var menu = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
+            menu.margin_top = 8;
+            menu.margin_bottom = 8;
+            menu.margin_start = 8;
+            menu.margin_end = 8;
+            string[] names = { "Grid", "Cascade", "By Title", "By Date", "By Color" };
+            string[] modes = { "grid", "cascade", "by-title", "by-date", "by-color" };
+            for (int index = 0; index < names.length; index++) {
+                var mode = modes[index];
+                var button = new Gtk.Button.with_label (names[index]);
+                button.add_css_class ("flat");
+                button.clicked.connect (() => {
+                    owner.arrange_note_windows (mode);
+                    popover.popdown ();
+                });
+                menu.append (button);
+            }
+            popover.set_child (menu);
+            arrange_button.popover = popover;
         }
 
         /** Moves keyboard focus to the manager's search field. */

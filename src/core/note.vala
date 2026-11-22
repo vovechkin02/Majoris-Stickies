@@ -12,8 +12,29 @@ namespace Stickies {
         /** User-editable note heading, preserved independently of the body. */
         public string title { get; private set; }
 
-        /** UTF-8 plain text body. Rich text is deferred to Stage 2. */
+        /** UTF-8 plain text body; formatting is stored separately. */
         public string content { get; private set; }
+
+        /** Bounded style intervals expressed in Unicode character positions. */
+        public string formatting { get; private set; default = ""; }
+
+        /** Whether only the note header is displayed. */
+        public bool is_collapsed { get; private set; default = false; }
+
+        /** Preferred always-on-top state, subject to shell support. */
+        public bool is_floating { get; private set; default = false; }
+
+        /** Whether the editor uses translucent paper. */
+        public bool is_translucent { get; private set; default = false; }
+
+        /** Last noncollapsed editor window width in logical pixels. */
+        public int window_width { get; private set; default = 370; }
+
+        /** Last noncollapsed editor window height in logical pixels. */
+        public int window_height { get; private set; default = 330; }
+
+        /** Whether the note window was open when Stickies last stopped. */
+        public bool is_visible { get; private set; default = false; }
 
         /** Validated paper-color token from NotePalette. */
         public string color { get; private set; }
@@ -34,7 +55,14 @@ namespace Stickies {
             string content,
             string color,
             int64 created_at_us,
-            int64 updated_at_us
+            int64 updated_at_us,
+            string formatting = "",
+            bool is_collapsed = false,
+            bool is_floating = false,
+            bool is_translucent = false,
+            int window_width = 370,
+            int window_height = 330,
+            bool is_visible = false
         ) {
             Object ();
             this.id = id;
@@ -43,6 +71,13 @@ namespace Stickies {
             this.color = NotePalette.is_valid (color) ? color : NotePalette.DEFAULT_COLOR;
             this.created_at_us = created_at_us;
             this.updated_at_us = updated_at_us;
+            this.formatting = NoteFormatting.is_valid (content, formatting) ? formatting : "";
+            this.is_collapsed = is_collapsed;
+            this.is_floating = is_floating;
+            this.is_translucent = is_translucent;
+            this.window_width = window_width >= 240 && window_width <= 4000 ? window_width : 370;
+            this.window_height = window_height >= 120 && window_height <= 4000 ? window_height : 330;
+            this.is_visible = is_visible;
         }
 
         /** Changes the heading, returning false when no actual edit occurred. */
@@ -63,7 +98,48 @@ namespace Stickies {
             }
 
             content = value;
+            formatting = "";
             touch ();
+            return true;
+        }
+
+        /** Updates the text and all formatting as one atomic in-memory revision. */
+        internal bool update_body (string text, string spans) {
+            if (!NoteFormatting.is_valid (text, spans)) {
+                return false;
+            }
+            if (content == text && formatting == spans) {
+                return false;
+            }
+            content = text;
+            formatting = spans;
+            touch ();
+            return true;
+        }
+
+        /** Changes note-window preferences without altering the edit timestamp. */
+        internal bool update_presentation (
+            bool collapsed,
+            bool floating,
+            bool translucent,
+            int width,
+            int height,
+            bool visible
+        ) {
+            if (width < 240 || width > 4000 || height < 120 || height > 4000) {
+                return false;
+            }
+            if (is_collapsed == collapsed && is_floating == floating &&
+                is_translucent == translucent && window_width == width &&
+                window_height == height && is_visible == visible) {
+                return false;
+            }
+            is_collapsed = collapsed;
+            is_floating = floating;
+            is_translucent = translucent;
+            window_width = width;
+            window_height = height;
+            is_visible = visible;
             return true;
         }
 

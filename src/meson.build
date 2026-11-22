@@ -1,4 +1,6 @@
 core_sources = files(
+  'core/note-attachment.vala',
+  'core/note-formatting.vala',
   'core/note-palette.vala',
   'core/note-repository.vala',
   'core/note.vala',
@@ -7,6 +9,11 @@ core_sources = files(
 gtk_sources = files(
   'gtk/manager-window.vala',
   'gtk/note-window.vala',
+  'gtk/rich-text-codec.vala',
+)
+
+service_sources = files(
+  'services/shell-window-bridge.vala',
 )
 
 app_sources = files(
@@ -23,8 +30,8 @@ resource_sources = gnome.compile_resources(
 
 stickies_executable = executable(
   'majoris-stickies',
-  [core_sources, gtk_sources, app_sources, resource_sources],
+  [core_sources, service_sources, gtk_sources, app_sources, resource_sources],
   dependencies: app_deps,
-  vala_args: ['--pkg=sqlite3'],
+  vala_args: stickies_vala_args,
   install: true,
 )

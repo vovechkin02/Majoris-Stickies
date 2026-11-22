@@ -11,8 +11,10 @@ namespace Stickies {
     public class NoteRepository : GLib.Object {
         private const uint AUTOSAVE_DELAY_MS = 500;
         private const int BUSY_TIMEOUT_MS = 200;
+        private const int64 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
         private Sqlite.Database database;
+        private string attachments_directory;
         private Gee.HashMap<string, Note> notes;
         private Gee.HashSet<string> dirty_ids;
         private Gee.HashMap<string, uint> save_sources;
@@ -26,6 +28,9 @@ namespace Stickies {
         /** Emitted after a note has been permanently deleted from storage. */
         public signal void note_deleted (string id);
 
+        /** Emitted after the attachment list changes for a particular note. */
+        public signal void attachment_changed (string id);
+
         /** Emitted when a dirty note has been successfully written to SQLite. */
         public signal void note_saved (Note note);
 
@@ -37,6 +42,9 @@ namespace Stickies {
          * Throws IOError on an invalid store, inaccessible path, or SQL failure.
          */
         public NoteRepository (string database_path) throws Error {
+            attachments_directory = GLib.Path.build_filename (
+                GLib.Path.get_dirname (database_path), "attachments"
+            );
             notes = new Gee.HashMap<string, Note> ();
             dirty_ids = new Gee.HashSet<string> ();
             save_sources = new Gee.HashMap<string, uint> ();
@@ -74,7 +82,10 @@ namespace Stickies {
                 throw new IOError.NOT_FOUND ("The source note no longer exists");
             }
 
-            return insert_note ("Copy of " + source.title, source.content, source.color);
+            var copy = insert_note ("Copy of " + source.title, source.content, source.color);
+            set_body (copy.id, source.content, source.formatting);
+            flush_note (copy.id);
+            return copy;
         }
 
         /** Looks up a note by its stable ID, or returns null. */
@@ -130,6 +141,156 @@ namespace Stickies {
             }
         }
 
+        /** Applies text and style runs as a single logical edit. */
+        public void set_body (string id, string text, string formatting) {
+            var note = find_note (id);
+            if (note != null && note.update_body (text, formatting)) {
+                queue_save (note);
+            }
+        }
+
+        /** Persists presentation preferences independently of body modifications. */
+        public void set_presentation (
+            string id,
+            bool collapsed,
+            bool floating,
+            bool translucent,
+            int width,
+            int height,
+            bool visible
+        ) {
+            var note = find_note (id);
+            if (note != null && note.update_presentation (
+                collapsed, floating, translucent, width, height, visible
+            )) {
+                queue_save (note);
+            }
+        }
+
+        /** Lists managed note attachments in stable insertion order. */
+        public Gee.ArrayList<NoteAttachment> list_attachments (string id) throws Error {
+            var result = new Gee.ArrayList<NoteAttachment> ();
+            Sqlite.Statement statement;
+            prepare (
+                "SELECT id, display_name, mime_type FROM attachments " +
+                "WHERE note_id = ?1 ORDER BY rowid ASC",
+                out statement
+            );
+            check_bind (statement.bind_text (1, id));
+            int status;
+            while ((status = statement.step ()) == Sqlite.ROW) {
+                var attachment_id = statement.column_text (0) ?? "";
+                result.add (new NoteAttachment (
+                    attachment_id,
+                    id,
+                    statement.column_text (1) ?? "Attachment",
+                    statement.column_text (2) ?? "application/octet-stream",
+                    attachment_path (attachment_id)
+                ));
+            }
+            if (status != Sqlite.DONE) {
+                throw new IOError.FAILED ("Unable to read attachments: " + database.errmsg ());
+            }
+            return result;
+        }
+
+        /**
+         * Copies an image or PDF asynchronously into private application storage.
+         * The SQL record is inserted only after the copy finishes successfully.
+         */
+        public async NoteAttachment attach_file (
+            string note_id,
+            GLib.File source,
+            GLib.Cancellable? cancellable = null
+        ) throws Error {
+            if (find_note (note_id) == null) {
+                throw new IOError.NOT_FOUND ("The note no longer exists");
+            }
+            var info = yield source.query_info_async (
+                "standard::display-name,standard::size,standard::content-type,standard::type",
+                GLib.FileQueryInfoFlags.NONE,
+                GLib.Priority.DEFAULT,
+                cancellable
+            );
+            if (info.get_file_type () != GLib.FileType.REGULAR ||
+                info.get_size () < 0 || info.get_size () > MAX_ATTACHMENT_BYTES) {
+                throw new IOError.INVALID_ARGUMENT ("Only regular files up to 50 MiB are supported");
+            }
+            var mime = info.get_content_type () ?? "application/octet-stream";
+            if (mime != "application/pdf" && !mime.has_prefix ("image/")) {
+                throw new IOError.NOT_SUPPORTED ("Only PDFs and image files may be attached");
+            }
+            if (GLib.DirUtils.create_with_parents (attachments_directory, 0700) != 0) {
+                throw new IOError.FAILED ("Unable to create attachment directory");
+            }
+            var id = GLib.Uuid.string_random ();
+            var destination = GLib.File.new_for_path (attachment_path (id));
+            try {
+                yield source.copy_async (
+                    destination,
+                    GLib.FileCopyFlags.NONE,
+                    GLib.Priority.DEFAULT,
+                    cancellable,
+                    null
+                );
+                // A source can change after its initial metadata query. Check
+                // the completed copy before admitting it to managed storage.
+                var copied = yield destination.query_info_async (
+                    "standard::size,standard::type",
+                    GLib.FileQueryInfoFlags.NONE,
+                    GLib.Priority.DEFAULT,
+                    cancellable
+                );
+                if (copied.get_file_type () != GLib.FileType.REGULAR ||
+                    copied.get_size () < 0 || copied.get_size () > MAX_ATTACHMENT_BYTES) {
+                    throw new IOError.INVALID_DATA ("The copied attachment exceeds 50 MiB");
+                }
+                Sqlite.Statement statement;
+                prepare (
+                    "INSERT INTO attachments(id,note_id,display_name,mime_type) " +
+                    "VALUES(?1,?2,?3,?4)",
+                    out statement
+                );
+                check_bind (statement.bind_text (1, id));
+                check_bind (statement.bind_text (2, note_id));
+                check_bind (statement.bind_text (3, info.get_display_name ()));
+                check_bind (statement.bind_text (4, mime));
+                check_step (statement.step ());
+            } catch (Error error) {
+                try {
+                    destination.delete (null);
+                } catch (Error cleanup_error) {
+                    warning ("Unable to clean up failed attachment: %s", cleanup_error.message);
+                }
+                throw error;
+            }
+            var attachment = new NoteAttachment (
+                id, note_id, info.get_display_name (), mime, attachment_path (id)
+            );
+            attachment_changed (note_id);
+            return attachment;
+        }
+
+        /** Removes the database reference before deleting the managed file. */
+        public void remove_attachment (string note_id, string attachment_id) throws Error {
+            Sqlite.Statement statement;
+            prepare ("DELETE FROM attachments WHERE id=?1 AND note_id=?2", out statement);
+            check_bind (statement.bind_text (1, attachment_id));
+            check_bind (statement.bind_text (2, note_id));
+            check_step (statement.step ());
+            if (database.changes () == 0) {
+                throw new IOError.NOT_FOUND ("Attachment not found");
+            }
+            try {
+                GLib.File.new_for_path (attachment_path (attachment_id)).delete (null);
+            } catch (IOError.NOT_FOUND error) {
+                // The metadata deletion succeeded; the file was already absent.
+            } catch (Error error) {
+                warning ("Unable to remove orphaned attachment: %s", error.message);
+            }
+            attachment_changed (note_id);
+        }
+
         /** Changes the paper color when the provided palette token is valid. */
         public void set_color (string id, string value) {
             var note = find_note (id);
@@ -147,6 +308,7 @@ namespace Stickies {
                 throw new IOError.NOT_FOUND ("The note no longer exists");
             }
 
+            var attachments_to_remove = list_attachments (id);
             Sqlite.Statement statement;
             prepare ("DELETE FROM notes WHERE id = ?1", out statement);
             check_bind (statement.bind_text (1, id));
@@ -155,6 +317,15 @@ namespace Stickies {
             cancel_save (id);
             dirty_ids.remove (id);
             notes.unset (id);
+            // Files are unlinked after the committed database deletion. A failure
+            // leaves an orphan, never an attachment record pointing to deleted data.
+            foreach (var attachment in attachments_to_remove) {
+                try {
+                    GLib.File.new_for_path (attachment.path).delete (null);
+                } catch (Error error) {
+                    warning ("Unable to remove deleted note attachment: %s", error.message);
+                }
+            }
             note_deleted (id);
         }
 
@@ -231,15 +402,14 @@ namespace Stickies {
             }
         }
 
-        /** Creates the stable Stage 1 schema without downgrading newer databases. */
+        /** Migrates Stage 1 in-place and rejects unknown newer schemas. */
         private void initialize_schema () throws Error {
             int version = read_schema_version ();
-            if (version > 1) {
+            if (version > 2) {
                 throw new IOError.NOT_SUPPORTED (
                     "This notes database was created by a newer version of Stickies"
                 );
             }
-
             execute (
                 "CREATE TABLE IF NOT EXISTS notes (" +
                 "id TEXT PRIMARY KEY NOT NULL, " +
@@ -250,9 +420,45 @@ namespace Stickies {
                 "updated_at_us INTEGER NOT NULL)"
             );
             execute ("CREATE INDEX IF NOT EXISTS notes_modified_idx ON notes(updated_at_us DESC)");
-            if (version == 0) {
-                execute ("PRAGMA user_version=1");
+            if (version < 2) {
+                execute ("BEGIN IMMEDIATE");
+                try {
+                    execute ("ALTER TABLE notes ADD COLUMN formatting TEXT NOT NULL DEFAULT ''");
+                    execute ("ALTER TABLE notes ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0");
+                    execute ("ALTER TABLE notes ADD COLUMN floating INTEGER NOT NULL DEFAULT 0");
+                    execute ("ALTER TABLE notes ADD COLUMN translucent INTEGER NOT NULL DEFAULT 0");
+                    execute ("ALTER TABLE notes ADD COLUMN window_width INTEGER NOT NULL DEFAULT 370");
+                    execute ("ALTER TABLE notes ADD COLUMN window_height INTEGER NOT NULL DEFAULT 330");
+                    execute ("ALTER TABLE notes ADD COLUMN visible INTEGER NOT NULL DEFAULT 0");
+                    execute (
+                        "CREATE TABLE attachments (" +
+                        "id TEXT PRIMARY KEY NOT NULL, " +
+                        "note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE, " +
+                        "display_name TEXT NOT NULL, mime_type TEXT NOT NULL)"
+                    );
+                    execute ("CREATE INDEX attachments_note_idx ON attachments(note_id)");
+                    execute ("PRAGMA user_version=2");
+                    execute ("COMMIT");
+                } catch (Error error) {
+                    execute ("ROLLBACK");
+                    throw error;
+                }
             }
+        }
+
+        /** Rejects corrupt or hostile identifiers before accessing private files. */
+        private string attachment_path (string id) throws Error {
+            if (id.length != 36) {
+                throw new IOError.INVALID_DATA ("Invalid attachment identifier");
+            }
+            for (int index = 0; index < id.length; index++) {
+                char value = id[index];
+                if (!((value >= '0' && value <= '9') ||
+                    (value >= 'a' && value <= 'f') || value == '-')) {
+                    throw new IOError.INVALID_DATA ("Invalid attachment identifier");
+                }
+            }
+            return GLib.Path.build_filename (attachments_directory, id + ".asset");
         }
 
         /** Reads the database's schema-version marker before attempting migrations. */
@@ -270,7 +476,9 @@ namespace Stickies {
         private void load_notes () throws Error {
             Sqlite.Statement statement;
             prepare (
-                "SELECT id, title, content, color, created_at_us, updated_at_us FROM notes",
+                "SELECT id, title, content, color, created_at_us, updated_at_us, " +
+                "formatting, collapsed, floating, translucent, " +
+                "window_width, window_height, visible FROM notes",
                 out statement
             );
 
@@ -282,7 +490,14 @@ namespace Stickies {
                     statement.column_text (2) ?? "",
                     statement.column_text (3) ?? NotePalette.DEFAULT_COLOR,
                     statement.column_int64 (4),
-                    statement.column_int64 (5)
+                    statement.column_int64 (5),
+                    statement.column_text (6) ?? "",
+                    statement.column_int (7) != 0,
+                    statement.column_int (8) != 0,
+                    statement.column_int (9) != 0,
+                    statement.column_int (10),
+                    statement.column_int (11),
+                    statement.column_int (12) != 0
                 );
                 notes.set (note.id, note);
             }
@@ -297,11 +512,16 @@ namespace Stickies {
             Sqlite.Statement statement;
             prepare (
                 "INSERT INTO notes " +
-                "(id, title, content, color, created_at_us, updated_at_us) " +
-                "VALUES (?1, ?2, ?3, ?4, ?5, ?6) " +
+                "(id, title, content, color, created_at_us, updated_at_us, " +
+                "formatting, collapsed, floating, translucent, window_width, window_height, visible) " +
+                "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) " +
                 "ON CONFLICT(id) DO UPDATE SET " +
                 "title=excluded.title, content=excluded.content, " +
-                "color=excluded.color, updated_at_us=excluded.updated_at_us",
+                "color=excluded.color, updated_at_us=excluded.updated_at_us, " +
+                "formatting=excluded.formatting, collapsed=excluded.collapsed, " +
+                "floating=excluded.floating, translucent=excluded.translucent, " +
+                "window_width=excluded.window_width, window_height=excluded.window_height, " +
+                "visible=excluded.visible",
                 out statement
             );
             check_bind (statement.bind_text (1, note.id));
@@ -310,6 +530,13 @@ namespace Stickies {
             check_bind (statement.bind_text (4, note.color));
             check_bind (statement.bind_int64 (5, note.created_at_us));
             check_bind (statement.bind_int64 (6, note.updated_at_us));
+            check_bind (statement.bind_text (7, note.formatting));
+            check_bind (statement.bind_int (8, note.is_collapsed ? 1 : 0));
+            check_bind (statement.bind_int (9, note.is_floating ? 1 : 0));
+            check_bind (statement.bind_int (10, note.is_translucent ? 1 : 0));
+            check_bind (statement.bind_int (11, note.window_width));
+            check_bind (statement.bind_int (12, note.window_height));
+            check_bind (statement.bind_int (13, note.is_visible ? 1 : 0));
             check_step (statement.step ());
         }
 

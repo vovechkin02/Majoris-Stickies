@@ -1,0 +1,128 @@
+namespace Stickies {
+    /**
+     * Maps stable text-style intervals to GTK text tags and back.
+     *
+     * GTK4 removed its old native rich-text serialization format. This codec
+     * persists only explicitly supported tags and never serializes GTK internals.
+     */
+    public class RichTextCodec : GLib.Object {
+        /** Defines the supported tags and their stable serialized identifiers. */
+        private static string[] styles () {
+            return {
+                "bold", "italic", "underline", "strikethrough",
+                "monospace", "large", "small"
+            };
+        }
+
+        /** Installs editor-owned tags into the given GTK buffer once. */
+        public static void prepare (Gtk.TextBuffer buffer) {
+            var bold = new Gtk.TextTag ("bold");
+            bold.weight = (int) Pango.Weight.BOLD;
+            buffer.tag_table.add (bold);
+
+            var italic = new Gtk.TextTag ("italic");
+            italic.style = Pango.Style.ITALIC;
+            buffer.tag_table.add (italic);
+
+            var underline = new Gtk.TextTag ("underline");
+            underline.underline = Pango.Underline.SINGLE;
+            buffer.tag_table.add (underline);
+
+            var strike = new Gtk.TextTag ("strikethrough");
+            strike.strikethrough = true;
+            buffer.tag_table.add (strike);
+
+            var mono = new Gtk.TextTag ("monospace");
+            mono.family = "Monospace";
+            buffer.tag_table.add (mono);
+
+            var large = new Gtk.TextTag ("large");
+            large.scale = 1.25;
+            buffer.tag_table.add (large);
+
+            var small = new Gtk.TextTag ("small");
+            small.scale = 0.85;
+            buffer.tag_table.add (small);
+            buffer.enable_undo = true;
+        }
+
+        /** Loads plain text and style runs while the caller suppresses edit signals. */
+        public static void load (Gtk.TextBuffer buffer, string text, string formatting) {
+            buffer.text = text;
+            if (!NoteFormatting.is_valid (text, formatting)) {
+                return;
+            }
+            foreach (var line in formatting.split ("\n")) {
+                if (line == "") {
+                    continue;
+                }
+                var pieces = line.split (":");
+                int start_offset;
+                int end_offset;
+                if (!int.try_parse (pieces[0], out start_offset) ||
+                    !int.try_parse (pieces[1], out end_offset)) {
+                    continue;
+                }
+                Gtk.TextIter start;
+                Gtk.TextIter end;
+                buffer.get_iter_at_offset (out start, start_offset);
+                buffer.get_iter_at_offset (out end, end_offset);
+                buffer.apply_tag_by_name (pieces[2], start, end);
+            }
+        }
+
+        /** Encodes active tag intervals as Unicode-character positions. */
+        public static string serialize (Gtk.TextBuffer buffer) {
+            var result = new GLib.StringBuilder ();
+            foreach (var style in styles ()) {
+                var tag = buffer.tag_table.lookup (style);
+                if (tag == null) {
+                    continue;
+                }
+                Gtk.TextIter iter;
+                buffer.get_start_iter (out iter);
+                int start = -1;
+                int offset = 0;
+                while (!iter.is_end ()) {
+                    var active = iter.has_tag (tag);
+                    if (active && start < 0) {
+                        start = offset;
+                    } else if (!active && start >= 0) {
+                        NoteFormatting.append_span (result, start, offset, style);
+                        start = -1;
+                    }
+                    iter.forward_char ();
+                    offset++;
+                }
+                if (start >= 0) {
+                    NoteFormatting.append_span (result, start, offset, style);
+                }
+            }
+            return result.str;
+        }
+
+        /** Toggles the chosen formatting on the current text selection. */
+        public static bool toggle_selected (Gtk.TextBuffer buffer, string style) {
+            if (!NoteFormatting.supports (style)) {
+                return false;
+            }
+            Gtk.TextIter start;
+            Gtk.TextIter end;
+            if (!buffer.get_selection_bounds (out start, out end)) {
+                return false;
+            }
+            var tag = buffer.tag_table.lookup (style);
+            if (tag == null) {
+                return false;
+            }
+            buffer.begin_user_action ();
+            if (start.has_tag (tag)) {
+                buffer.remove_tag (tag, start, end);
+            } else {
+                buffer.apply_tag (tag, start, end);
+            }
+            buffer.end_user_action ();
+            return true;
+        }
+    }
+}

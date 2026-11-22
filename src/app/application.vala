@@ -10,6 +10,8 @@ namespace Stickies {
         private ManagerWindow? manager_window;
         private Gee.HashMap<string, NoteWindow> note_windows;
         private bool styles_loaded = false;
+        private bool windows_restored = false;
+        private ShellWindowBridge shell_bridge;
 
         /** Initializes the single-instance desktop application and its window registry. */
         public StickiesApp () {
@@ -18,6 +20,7 @@ namespace Stickies {
                 flags: GLib.ApplicationFlags.FLAGS_NONE
             );
             note_windows = new Gee.HashMap<string, NoteWindow> ();
+            shell_bridge = new ShellWindowBridge ();
         }
 
         /** Registers application actions and their keyboard shortcuts. */
@@ -57,6 +60,17 @@ namespace Stickies {
             }
 
             show_manager ();
+            if (!windows_restored) {
+                windows_restored = true;
+                var store = repository;
+                if (store != null) {
+                    foreach (var note in store.list_notes ()) {
+                        if (note.is_visible) {
+                            open_note (note.id);
+                        }
+                    }
+                }
+            }
         }
 
         /** Flushes any pending saves as a final lifecycle safety net. */
@@ -138,9 +152,17 @@ namespace Stickies {
                 return;
             }
 
+            store.set_presentation (
+                id, note.is_collapsed, note.is_floating, note.is_translucent,
+                note.window_width, note.window_height, true
+            );
             var window = new NoteWindow (this, store, note);
             note_windows.set (id, window);
             window.present ();
+            GLib.Idle.add (() => {
+                register_window_async.begin (window);
+                return GLib.Source.REMOVE;
+            });
         }
 
         /**
@@ -194,6 +216,104 @@ namespace Stickies {
         public void note_window_was_closed (string id, NoteWindow window) {
             if (note_windows.get (id) == window) {
                 note_windows.unset (id);
+            }
+        }
+
+        /** Registers a visible window with the optional compositor bridge. */
+        private async void register_window_async (NoteWindow window) {
+            var store = repository;
+            var note = store != null ? store.find_note (window.note_id ()) : null;
+            if (note == null) {
+                return;
+            }
+            try {
+                yield shell_bridge.register_window (window, note.id, note.is_floating);
+            } catch (Error error) {
+                debug ("Optional Stickies shell integration unavailable: %s", error.message);
+            }
+        }
+
+        /** Requests a compositor-controlled floating change without blocking GTK. */
+        public void request_floating (NoteWindow window, bool enabled) {
+            set_floating_async.begin (window, enabled);
+        }
+
+        /** Calls the optional shell extension and commits state only on success. */
+        private async void set_floating_async (NoteWindow window, bool enabled) {
+            try {
+                var store_before = repository;
+                var note_before = store_before != null ?
+                    store_before.find_note (window.note_id ()) : null;
+                if (note_before == null) {
+                    return;
+                }
+                yield shell_bridge.register_window (
+                    window, note_before.id, note_before.is_floating
+                );
+                yield shell_bridge.set_floating (window, enabled);
+                var store = repository;
+                var note = store != null ? store.find_note (window.note_id ()) : null;
+                if (store != null && note != null) {
+                    store.set_presentation (
+                        note.id, note.is_collapsed, enabled, note.is_translucent,
+                        note.window_width, note.window_height, true
+                    );
+                }
+            } catch (Error error) {
+                window.show_save_failure (
+                    "Always on Top requires the Majoris Stickies Shell extension: " +
+                    error.message
+                );
+            }
+        }
+
+        /** Requests a window arrangement based on note colors, dates or titles. */
+        public void arrange_note_windows (string mode) {
+            arrange_windows_async.begin (mode);
+        }
+
+        /** Sorts open windows then delegates compositor placement to GNOME Shell. */
+        private async void arrange_windows_async (string mode) {
+            var store = repository;
+            if (store == null || note_windows.size == 0) {
+                return;
+            }
+            var windows = new Gee.ArrayList<NoteWindow> ();
+            foreach (var window in note_windows.values) {
+                windows.add (window);
+            }
+            windows.sort ((left, right) => {
+                var left_note = store.find_note (left.note_id ());
+                var right_note = store.find_note (right.note_id ());
+                if (left_note == null || right_note == null) {
+                    return 0;
+                }
+                switch (mode) {
+                    case "by-color":
+                        return left_note.color.collate (right_note.color);
+                    case "by-date":
+                        if (left_note.created_at_us == right_note.created_at_us) {
+                            return left_note.id.collate (right_note.id);
+                        }
+                        return left_note.created_at_us < right_note.created_at_us ? -1 : 1;
+                    default:
+                        return left_note.title.collate (right_note.title);
+                }
+            });
+            var ids = new GLib.StringBuilder ();
+            foreach (var window in windows) {
+                if (ids.len > 0) {
+                    ids.append_c (',');
+                }
+                ids.append_printf ("%u", (uint) window.get_id ());
+            }
+            try {
+                yield shell_bridge.arrange (mode, ids.str);
+            } catch (Error error) {
+                report_operation_error (
+                    "Could not arrange notes",
+                    "The Stickies Shell extension must be enabled: " + error.message
+                );
             }
         }
 

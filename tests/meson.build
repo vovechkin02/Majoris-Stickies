@@ -18,6 +18,14 @@ repository_unit_executable = executable(
 )
 test('SQLite note persistence and search', repository_unit_executable, suite: 'unit')
 
+stage2_unit_executable = executable(
+  'test-stage2',
+  [core_sources, files('unit/test-stage2.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 2 migration and formatting', stage2_unit_executable, suite: 'unit')
+
 test(
   'UI resources and template bindings',
   python,

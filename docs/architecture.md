@@ -1,82 +1,138 @@
-# Architecture and design decisions — Stage 1
+# Architecture and design decisions — Stage 2
 
-## Scope and responsibility
-
-Stage 1 establishes a functional local note editor and manager while intentionally
-excluding image attachments, rich text, desktop Shell controls, and synchronization.
-The only reusable domain objects are `Note`, `NotePalette`, and `NoteRepository`.
+## Scope and module responsibilities
 
 ```text
-StickiesApp (actions, window registry)
-  ├── ManagerWindow (card list, search, actions)
-  └── NoteWindow per open note (title, body, palette, save status)
-        │
-        └───────── NoteRepository ── SQLite notes table
-                       │
-                       └── Note (plain data, validated color)
+StickiesApp (actions, window registry, startup restoration)
+  ├── ManagerWindow (search, cards, arrangement menu)
+  ├── NoteWindow (one GTK editor per note; user actions)
+  │      ├── RichTextCodec (GTK tags ↔ UTF-8 character-offset spans)
+  │      └── ImageKit.ImageView (optional installed GTK4 component)
+  ├── ShellWindowBridge (optional GNOME Shell D-Bus boundary)
+  └── NoteRepository (single data owner; debounced commits)
+         ├── Note (text, formatting, color, window prefs)
+         ├── NoteFormatting (strict rich-text input contract)
+         ├── NoteAttachment (managed file descriptor)
+         ├── SQLite (notes and attachment records)
+         └── attachments/ (managed image and PDF copies)
+
+GNOME Shell extension (separate compositor module)
+  └── Registered Stickies note windows, positions, stacking and layout
 ```
 
-`NoteRepository` is the one source of truth for note state. UI widgets call the
-repository for edits and react to its native GObject signals. The repository
-stores edited notes to SQLite 500 milliseconds after the most recent edit per
-note. It writes a newly created or duplicated note immediately. A final flush
-occurs when a note editor/manager closes and during application shutdown.
+The Vala domain model has no GTK dependencies. The manager and editor share the
+same repository and observe its native GObject signals. Attachment changes are
+notified separately to avoid reconstructing image viewers on text edits.
 
-The UI uses an in-memory, sorted snapshot for case-folded Unicode search. This
-simplifies the first stage. If profiling later shows performance bottlenecks,
-consider a database-backed FTS5 index and an asynchronous or virtualized list.
+## Storage schema and migration
 
-## Storage schema and versioning
+The Stage 1 `notes` table, with note UUID, title, content, color and timestamps,
+is upgraded **in-place** to Stage 2 inside a SQL transaction. New columns:
+
+| Column | Type / default | Meaning |
+| --- | --- | --- |
+| `formatting` | TEXT `''` | `start:end:style` half-open Unicode runs |
+| `collapsed` | INTEGER `0` | Note paper hidden |
+| `floating` | INTEGER `0` | Shell-managed always-on-top preference |
+| `translucent` | INTEGER `0` | Paper opacity preference |
+| `window_width` | INTEGER `370` | Noncollapsed logical pixel width |
+| `window_height` | INTEGER `330` | Noncollapsed logical pixel height |
+| `visible` | INTEGER `0` | Whether to reopen editor after startup |
+
+New table:
 
 ```sql
-CREATE TABLE IF NOT EXISTS notes (
+CREATE TABLE attachments (
     id TEXT PRIMARY KEY NOT NULL,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    color TEXT NOT NULL,
-    created_at_us INTEGER NOT NULL,
-    updated_at_us INTEGER NOT NULL
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    display_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS notes_modified_idx ON notes(updated_at_us DESC);
-PRAGMA user_version=1;
+CREATE INDEX attachments_note_idx ON attachments(note_id);
+PRAGMA user_version=2;
 ```
 
-IDs use GLib UUIDs. Timestamps are Unix microseconds. The `color` column stores
-one of the eight tokens defined by `NotePalette`, not CSS hex colors. A future
-schema migration must increment `user_version` without silently overwriting or
-downgrading newer schemas.
+On a new database the original Stage 1 columns are created and upgraded to v2.
+Unknown newer schema versions are rejected. Existing note IDs, timestamps and
+colors are unchanged. Attachment file names are UUID-derived, never blindly
+loaded from SQL paths.
 
-## GoF design review
+## Rich text and images
 
-| Pattern/idiom | Participants | Rationale |
+`RichTextCodec` translates between supported GtkTextTags and bounded serialized
+spans. Style offsets are Unicode **characters**, not UTF-8 byte positions.
+GTK-native formatting state is not persisted directly. The supported styles
+are bold, italic, underline, strikethrough, monospace, large and small.
+Note content changes and serialized formatting are committed together.
+
+Majoris Image's installed `ImageKit.ImageView` handles decoding and display
+of image attachments when built with `-Dimagekit=enabled` or `auto` and an
+installed compatible package. This app deliberately does not invent image
+loaders or use GTK's regular image-file decoder as a fallback. Without the
+library it displays a file card with an image icon. PDFs are managed file
+cards that open in the default viewer, not embedded page renderers.
+
+## Desktop and compositor ownership
+
+On Wayland, GTK4 clients cannot position windows or mark them always on top
+using the removed X11-era window APIs. A small, optional GNOME Shell extension
+owns placement, layouts, and stacking. The application calls an adapter
+`ShellWindowBridge` with a private typed D-Bus interface. The compositor only
+accepts windows verified as Stickies GTK note windows. User preferences for
+floating are saved **only after the compositor confirms the request**.
+
+When active, the extension writes note UUID→rect mappings into a private JSON
+file in the Stickies data directory, clamps restored coordinates to monitor
+work areas and supports grid, cascade and ordered layouts. The GNOME Shell
+extension is a separate deployment artifact and must be qualified on the
+shipping GNOME Shell release; the application must remain functional without
+it. `paper_box.opacity` is a GTK child property and does not turn the outer
+window translucent.
+
+## Lifetime, I/O and errors
+
+- Note creation and row updates are on the GTK main context, with a 500 ms
+  debounce per note. A window flushes before successful close; failures keep
+  edits in memory and are shown to the user.
+- Attachments are asynchronously copied with `GFile.copy_async`. The file is
+  checked before and after copying; its metadata row is inserted only once the
+  private copy has succeeded and remained within bounds. A failed insert
+  removes the new file. Deletion removes database metadata before trying to
+  delete the managed file; a filesystem failure may leave an orphan but not
+  an SQL pointer to a missing file.
+- Plain-text file selection and read/write use async Gio APIs. The import
+  is bounded, UTF-8 validated and rejects NUL bytes; it deliberately resets
+  existing formatting. Export is a plain-text snapshot.
+- Each editor owns one cancellable for its file actions and cancels it on
+  successful close. Editor and manager subscriptions are disconnected on
+  close. The application owns the registry of open windows.
+- Many editor windows or huge notes may require additional profiling before
+  increasing scope. Fast local SQL and in-memory Unicode search remain
+  intentional for short desktop notes; no unnecessary worker system is added.
+
+## Gang of Four design review
+
+| Decision | Participants | Why |
 | --- | --- | --- |
-| Observer (GObject-native) | Repository signals / manager and editor subscriptions | GTK-native notifications, no custom event bus |
-| Facade (small, domain-oriented entry point) | `NoteRepository` CRUD/search/flush methods | Hides storage and debouncing from the UI; not a general service locator |
-| No other GoF pattern | Small, fixed backend and one presentation technology | No meaningful variant justifies a Factory, Strategy, or State hierarchy |
+| Observer using GObject | `NoteRepository` signals, subscribers in editor/manager | Native event delivery; not a second custom event bus |
+| Facade | `NoteRepository` CRUD and save operations | Stable domain entry point over SQLite and timer state |
+| Adapter | `ShellWindowBridge` ↔ GNOME Shell D-Bus | Translates a compositor-specific interface to app operations |
+| No arbitrary Factory or Strategy | Single SQLite backend and fixed editor | No independently varying concrete implementation exists |
 
-All repository callbacks are run on the GTK main context. Editor and manager
-subscriptions are disconnected on successful close to avoid reference cycles.
-The application owns each open editor window, keyed by note UUID. The manager
-can close independently of editors. The model and repository have no GTK import.
+The shell bridge's optional behavior is explicitly reported; no silent
+fallback claims compositor success. No public SDK or ABI change is implied by
+these private Stage 2 modules.
 
-## Persistence and failure handling
+## Open qualification risks
 
-- `INSERT ... ON CONFLICT` stores complete note records atomically.
-- All note data uses SQLite parameter binding; none is interpolated into SQL.
-- Successful flushes clear dirty state and emit `note_saved`.
-- Failed flushes leave records dirty, emit `save_failed` for debounced saves,
-  and refuse ordinary editor or manager closure until storage is writable.
-- Delete is explicitly permanent in Stage 1 and is confirmed before execution.
-- A close during a failed save is rejected, enabling users to copy their text.
-- The current main-context SQLite design is suitable for short, personal notes,
-  not an unbounded database. Large datasets and slow disks require profiling and
-  an asynchronous implementation before scaling.
+- Compile and inspect Vala ownership, GtkTextBuffer tags, DBus argument types,
+  XML template bindings and `ImageKit.ImageView` under the actual Debian 13
+  SDK and installed Majoris Image version.
+- Run normal and failed-save shutdown scenarios, including GNOME logout.
+- Validate compositor positioning, window identification, multi-monitor
+  work areas and GNOME extension lifecycle on the exact Majoris Shell build.
+- Test filesystem failure, large attachment growth during copy, malformed
+  formatting strings and Unicode selection on the target GTK runtime.
 
-## External integrations
-
-Majoris Image is deliberately not linked while Stage 1 uses only plain text.
-When later stages add embedded images, consult the ABI 2 `ImageKitView`
-consumer integration guide in https://github.com/vovechkin02/Majoris-Image.
-Use the established worker, image rendering, and thumbnailing components rather
-than a custom GTK texture loader. GNOME Shell always-on-top, positioning, and
-workspace integration will be a separate, optional component.
+See `docs/stage-2-qualification.md` for executable commands and recorded
+verification evidence.
