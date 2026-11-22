@@ -26,6 +26,14 @@ stage2_unit_executable = executable(
 )
 test('Stage 2 migration and formatting', stage2_unit_executable, suite: 'unit')
 
+stage3_unit_executable = executable(
+  'test-stage3',
+  [core_sources, files('unit/test-stage3.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 3 sources and transfer', stage3_unit_executable, suite: 'unit')
+
 test(
   'UI resources and template bindings',
   python,

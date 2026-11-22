@@ -2,7 +2,7 @@ project(
   'majoris-stickies',
   'vala',
   'c',
-  version: '0.2.0',
+  version: '0.3.0',
   meson_version: '>=1.0.0',
   default_options: ['warning_level=2'],
 )
@@ -30,7 +30,7 @@ subdir('data')
 subdir('tests')
 
 summary({
-  'Stage': '2 — Desktop notes and rich editing',
+  'Stage': '3 — Screenshot and source workflows',
   'ImageKit': imagekit_dep.found(),
   'Shell extension installed': get_option('shell_extension'),
   'Storage': 'SQLite, local-first',

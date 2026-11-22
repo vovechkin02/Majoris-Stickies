@@ -55,6 +55,37 @@ class ResourceLayoutTests(unittest.TestCase):
             self.assertTrue(bindings, window)
             self.assertTrue(set(bindings) <= ids, f"{window}: missing {set(bindings) - ids}")
 
+    def test_stage3_controls_present(self) -> None:
+        """Check screenshot actions, source controls, and manager filters."""
+        manager = ET.parse(self.data_dir / "manager-window.ui")
+        note = ET.parse(self.data_dir / "note-window.ui")
+        manager_ids = {node.get("id") for node in manager.iter("object")}
+        note_ids = {node.get("id") for node in note.iter("object")}
+        self.assertTrue(
+            {"screenshot_button", "color_filter", "sort_dropdown", "list_toggle", "count_label"}
+            <= manager_ids
+        )
+        self.assertTrue({"screenshot_button", "source_button"} <= note_ids)
+
+    def test_desktop_actions_match_application(self) -> None:
+        """Require supported single-instance command-line routes in the launcher."""
+        import configparser
+
+        desktop = configparser.ConfigParser(interpolation=None)
+        desktop.read(self.data_dir / "com.majoris.stickies.desktop")
+        commands = {
+            "NewNote": "--new-note",
+            "CaptureScreenshot": "--capture-screenshot",
+            "ShowNotes": "--show-notes",
+        }
+        actions = desktop["Desktop Entry"]["Actions"].strip(";").split(";")
+        self.assertEqual(actions, list(commands))
+        application = (self.data_dir.parent / "src/app/application.vala").read_text()
+        for name, command in commands.items():
+            self.assertEqual(desktop[f"Desktop Action {name}"]["Exec"],
+                             f"majoris-stickies {command}")
+            self.assertIn(command, application)
+
     def test_palette_css_covers_all_colors(self) -> None:
         """Require a semantic note-paper CSS rule for each palette option."""
         colors = {"yellow", "pink", "green", "blue", "purple", "orange", "teal", "gray"}

@@ -9,3 +9,16 @@ Categories=Utility;Office;
 StartupNotify=true
 DBusActivatable=false
 Keywords=Notes;Sticky;Memo;Reminders;
+Actions=NewNote;CaptureScreenshot;ShowNotes;
+
+[Desktop Action NewNote]
+Name=New Sticky Note
+Exec=majoris-stickies --new-note
+
+[Desktop Action CaptureScreenshot]
+Name=Create Note from Screenshot
+Exec=majoris-stickies --capture-screenshot
+
+[Desktop Action ShowNotes]
+Name=Show All Notes
+Exec=majoris-stickies --show-notes

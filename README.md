@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.2.0 (Stage 2 source implementation)  
+**Version:** 0.3.0 (Stage 3 source implementation)  
 **Status:** Pre-release; Vala compilation, native GUI and GNOME Shell integration have
 not been qualified in the packaging environment  
 **License:** GPL-3.0-or-later  
@@ -58,10 +58,29 @@ Stage 2 adds:
 - **Database migration:** transactional, in-place migration from Stage 1's
   SQLite schema to Stage 2 without renumbering existing notes.
 
+Stage 3 adds:
+
+- **Screenshots:** capture a screenshot with the interactive XDG desktop portal,
+  either in a new note or attached to the current note. Requires the portal
+  backend and the user's approval; denial/cancellation never creates a note.
+- **Source references:** attach, clear, search, and open a verified HTTP(S) URL
+  per note. URLs are entered by users; the application does not claim that it
+  can identify the active browser page automatically.
+- **Clipboard:** "Copy Note" exports text and supported inline styles via
+  `text/plain` and `text/html` MIME formats. Attachment filenames are listed,
+  but the private attachment files themselves are not embedded in the clipboard.
+- **Manager:** color filter, newest/oldest/title/color sorting, grid/list views,
+  visible match count, screenshot action and clipboard copy on each note card.
+- **Desktop integration:** launcher actions for New Note, Screenshot Note and
+  Show Notes, with `--new-note`, `--capture-screenshot` and `--show-notes`
+  command-line routing to the running single-instance application.
+- **Persistence:** transactional SQLite v2→v3 migration adds source URLs while
+  retaining earlier note IDs, rich-text spans and window preferences.
+
 **Not yet implemented:** RTF/RTFD import/export, arbitrary font selection,
 full font-size controls, numbered/bulleted lists, inline PDF page rendering,
 true transparent toplevel windows, multi-monitor placement qualification,
-external account syncing, screenshots, reminders, or Trash/Archive. The
+external account syncing, automatic browser URL extraction, reminders, or Trash/Archive. The
 translucency toggle changes the paper's opacity, not compositor-wide window
 alpha. Note deletion remains permanent.
 
@@ -71,7 +90,7 @@ alpha. Note deletion remains permanent.
 | --- | --- |
 | Debian 13 / GNOME | Target platform; native runtime not yet qualified |
 | GTK4 / libadwaita | Declarative GTK4 GUI, majoris-themed note paper |
-| SQLite | Local data; schema v2 with transactional migration |
+| SQLite | Local data; schema v3 with transactional migrations |
 | [Majoris Image](https://github.com/vovechkin02/Majoris-Image) | Optional GTK4 dependency; image file previews only |
 | GNOME Shell | Optional extension; targeted at Shell 48–50, unverified in compositor |
 | Internet / account | Not required |
@@ -130,6 +149,10 @@ Ctrl+N, select text and apply formatting, choose colors, or use its options
 menu to attach files, import/export text, collapse/expand, toggle translucent
 paper, or request Always on Top. Open previously closed notes from the manager.
 
+Use Ctrl+Shift+S to request a screenshot through the desktop portal. Copy Note
+exports text plus HTML formatting, and Edit Source URL links a note to an
+explicit HTTP(S) page. Color and sort dropdowns filter the manager cards.
+
 The manager's Arrange menu offers Grid, Cascade, By Title, By Date, and By
 Color. Always on Top and arrangements require the optional extension. If it
 is unavailable, the application reports the error and does not persist a
@@ -143,7 +166,7 @@ false successful floating state.
   filenames and original display names in SQLite.
 - Shell-managed positions: `window-positions.json` in the same data directory,
   written only by the optional extension.
-- The schema uses `PRAGMA user_version=2` and upgrades Stage 1's schema
+- The schema uses `PRAGMA user_version=3` and upgrades Stage 1 and Stage 2 schemas
   in-place, preserving note IDs and existing content. Databases from newer
   versions are rejected rather than overwritten.
 - Back up the **entire directory** after Stickies has exited, to include
@@ -156,12 +179,14 @@ visible. A forced crash can leave a saved visible state to reopen next time.
 
 ## Architecture and API
 
-`NoteRepository` owns SQL, attachment metadata, note identity and save
-scheduling. `Note` and `NoteFormatting` are GTK-independent. `RichTextCodec`
+`NoteRepository` owns SQL, attachment metadata, source URL persistence, note
+identity and save scheduling. `Note`, `NoteFormatting`, `SourceLink`, and
+`NoteTransfer` are GTK-independent. `RichTextCodec`
 translates between GTK text tags and style intervals. `NoteWindow` and
 `ManagerWindow` own XML-defined presentation. `ShellWindowBridge` is an
-optional D-Bus client, while the Shell extension is a separate compositor
-module. The application owns the window registry and startup lifecycle.
+optional D-Bus client, while `ScreenshotPortal` provides a separate
+permission-mediated D-Bus integration for screenshots. The Shell extension is
+a separate compositor module. The application owns the window registry and startup lifecycle.
 
 See [architecture](docs/architecture.md) for module responsibility, database
 migration, concurrency boundaries, GoF applicability and reliability.
@@ -192,18 +217,18 @@ python3 tests/integration/test_resource_layout.py data
 node --check shell/majoris-stickies@majoris.org/extension.js
 ```
 
-Vala unit tests cover Stage 1 CRUD/search and Stage 2 formatting, migration,
-rich-text duplication, and persisted presentation state. Python tests verify
-UI resources and template fields.
+Vala unit tests cover Stage 1 CRUD/search, Stage 2 formatting and migrations,
+and Stage 3 source URL validation, persistence, search, and clipboard export.
+Python tests verify UI resources and template fields.
 
-**For this archive:** Python XML integration tests passed (5 tests), the Shell
-JavaScript parsed with `node --check`, and the XML/JSON files parsed. Vala
-unit tests, Meson build, GTK rendering, ImageKit integration, and compositor
-behavior have **not been run**: this packaging environment lacks `valac`,
-Meson, GTK4 and libadwaita development packages and cannot fetch them.
+**For this archive:** Python resource integration tests passed (7 tests), and
+XML/JSON source files parsed. Vala unit tests, Meson build, GTK rendering,
+ImageKit integration, and compositor behavior have **not been run**: this
+packaging environment lacks `valac`, Meson, GTK4 and libadwaita development
+packages and cannot fetch them.
 
 Further details and required target-machine checks are recorded in
-[Stage 2 qualification](docs/stage-2-qualification.md). Do not label this
+[Stage 3 qualification](docs/stage-3-qualification.md). Do not label this
 source release as compiled, runtime-qualified or complete macOS parity.
 
 ## Contributing and license
@@ -214,3 +239,6 @@ ownership, and XML layout policy. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 GPL-3.0-or-later; see [LICENSE](LICENSE). Original source is distributed,
 without bundling third-party binaries, image assets or Majoris Image itself.
+
+Stage 3 compatibility and manual screenshot/clipboard qualification are tracked
+in [docs/stage-3-qualification.md](docs/stage-3-qualification.md).

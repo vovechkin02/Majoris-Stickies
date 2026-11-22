@@ -11,6 +11,16 @@ namespace Stickies {
         [GtkChild]
         private unowned Gtk.Button new_button;
         [GtkChild]
+        private unowned Gtk.Button screenshot_button;
+        [GtkChild]
+        private unowned Gtk.DropDown color_filter;
+        [GtkChild]
+        private unowned Gtk.DropDown sort_dropdown;
+        [GtkChild]
+        private unowned Gtk.ToggleButton list_toggle;
+        [GtkChild]
+        private unowned Gtk.Label count_label;
+        [GtkChild]
         private unowned Gtk.MenuButton arrange_button;
         [GtkChild]
         private unowned Gtk.SearchEntry search_entry;
@@ -32,6 +42,8 @@ namespace Stickies {
             this.repository = repository;
 
             new_button.clicked.connect (() => owner.create_and_open_note ());
+            screenshot_button.clicked.connect (() => owner.capture_screenshot ());
+            initialize_filters ();
             create_arrangement_menu ();
             search_entry.search_changed.connect (queue_refresh);
             repository.note_added.connect (on_note_changed);
@@ -40,6 +52,22 @@ namespace Stickies {
             repository.save_failed.connect (on_save_failed);
             this.close_request.connect (on_close_request);
             refresh_cards ();
+        }
+
+        /** Configures list/grid, sorting and color filters without new persistence. */
+        private void initialize_filters () {
+            var color_names = new Gtk.StringList (null);
+            color_names.append ("All Colors");
+            foreach (var color in NotePalette.all_colors ()) {
+                color_names.append (NotePalette.label_for (color));
+            }
+            color_filter.model = color_names;
+            sort_dropdown.model = new Gtk.StringList ({
+                "Recently Edited", "Oldest Edited", "Title A–Z", "Color"
+            });
+            color_filter.notify["selected"].connect ((property) => queue_refresh ());
+            sort_dropdown.notify["selected"].connect ((property) => queue_refresh ());
+            list_toggle.toggled.connect (queue_refresh);
         }
 
         /** Exposes compositor-controlled arrangements without showing menu icons. */
@@ -94,10 +122,38 @@ namespace Stickies {
             notes_flow.remove_all ();
 
             var results = repository.search_notes (search_entry.text);
+            var colors = NotePalette.all_colors ();
+            uint selected_color = color_filter.selected;
+            if (selected_color > 0 && selected_color <= (uint) colors.length) {
+                var chosen = colors[(int) selected_color - 1];
+                for (int index = results.size - 1; index >= 0; index--) {
+                    if (results[index].color != chosen) {
+                        results.remove_at (index);
+                    }
+                }
+            }
+            switch (sort_dropdown.selected) {
+                case 1:
+                    results.sort ((a, b) => a.updated_at_us < b.updated_at_us ? -1 :
+                        (a.updated_at_us > b.updated_at_us ? 1 : 0));
+                    break;
+                case 2:
+                    results.sort ((a, b) => a.title.collate (b.title));
+                    break;
+                case 3:
+                    results.sort ((a, b) => a.color.collate (b.color));
+                    break;
+                default:
+                    break;
+            }
+            notes_flow.max_children_per_line = list_toggle.active ? 1 : 3;
             foreach (var note in results) {
                 notes_flow.insert (create_note_card (note), -1);
             }
 
+            count_label.label = "%d note%s".printf (
+                results.size, results.size == 1 ? "" : "s"
+            );
             empty_label.visible = results.size == 0;
             if (results.size == 0 && search_entry.text.strip () != "") {
                 empty_label.label = "No notes match your search.";
@@ -111,7 +167,8 @@ namespace Stickies {
             var card = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
             card.add_css_class ("note-card");
             card.add_css_class ("note-" + note.color);
-            card.set_size_request (210, 172);
+            card.set_size_request (list_toggle.active ? 520 : 210,
+                list_toggle.active ? 115 : 172);
 
             var open_button = new Gtk.Button ();
             open_button.add_css_class ("flat");
@@ -138,6 +195,15 @@ namespace Stickies {
             preview.max_width_chars = 31;
             content.append (preview);
 
+            if (note.source_url != "") {
+                var origin = new Gtk.Label (note.source_url);
+                origin.halign = Gtk.Align.START;
+                origin.ellipsize = Pango.EllipsizeMode.MIDDLE;
+                origin.max_width_chars = list_toggle.active ? 64 : 30;
+                origin.tooltip_text = note.source_url;
+                content.append (origin);
+            }
+
             var timestamp = new GLib.DateTime.from_unix_local (note.updated_at_us / 1000000);
             var modified_label = new Gtk.Label (timestamp.format ("%b %d, %H:%M") ?? "");
             modified_label.halign = Gtk.Align.START;
@@ -150,7 +216,13 @@ namespace Stickies {
 
             var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 5);
             actions.halign = Gtk.Align.END;
-            var duplicate_button = new Gtk.Button.from_icon_name ("edit-copy-symbolic");
+            var copy_button = new Gtk.Button.from_icon_name ("edit-copy-symbolic");
+            copy_button.add_css_class ("flat");
+            copy_button.tooltip_text = "Copy Note to Clipboard";
+            copy_button.clicked.connect (() => owner.copy_note (note.id));
+            actions.append (copy_button);
+
+            var duplicate_button = new Gtk.Button.from_icon_name ("document-duplicate-symbolic");
             duplicate_button.add_css_class ("flat");
             duplicate_button.tooltip_text = "Duplicate Note";
             duplicate_button.clicked.connect (() => owner.duplicate_and_open_note (note.id));

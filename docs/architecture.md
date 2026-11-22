@@ -136,3 +136,30 @@ these private Stage 2 modules.
 
 See `docs/stage-2-qualification.md` for executable commands and recorded
 verification evidence.
+
+## Stage 3: screenshots, web sources and clipboard (0.3.0)
+
+- `ScreenshotPortal` is an asynchronous adapter to `org.freedesktop.portal.Screenshot`
+  and the `org.freedesktop.portal.Request::Response` contract. The portal, not
+  the application, owns the screenshot authorization UI. The adapter enforces
+  one active request, a finite wait, denial semantics and D-Bus cleanup.
+- `SourceLink` validates HTTP(S) URLs at the domain boundary. `NoteRepository`
+  owns the SQLite v3 migration and persists one source URL per note. The
+  `Note` model retains the source URL with edit timestamps.
+- `NoteTransfer` exports both sanitized HTML and plain text, applying existing
+  formatting intervals as nested tags without duplicating GTK widgets or
+  copying private file paths into the clipboard. The application is responsible
+  for the `Gdk.ContentProvider` lifetime, not the core model.
+- `ManagerWindow` controls presentation-only color and order selection; the
+  repository remains the authoritative in-memory source of note records.
+- Command-line desktop actions use GApplication's single-instance routing.
+
+**GoF review:** ScreenshotPortal is a boundary adapter for the portal D-Bus
+contract (not a generic screenshot Strategy). GObject signals retain their
+normal observer semantics. SourceLink and NoteTransfer are cohesive utilities,
+not artificial Factories or Singleton services. No new pattern abstraction was
+introduced without a real independent variation point.
+
+**Compatibility:** Stage 3's additive SQLite migration does not rename earlier
+columns, existing GObject properties, application IDs, schemas, or Shell D-Bus
+methods. The source URL is optional and defaults to empty on older notes.

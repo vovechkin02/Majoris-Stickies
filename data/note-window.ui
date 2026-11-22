@@ -23,6 +23,12 @@
               </object>
             </child>
             <child type="end">
+              <object class="GtkButton" id="screenshot_button">
+                <property name="icon-name">camera-photo-symbolic</property>
+                <property name="tooltip-text">Attach Screenshot</property>
+              </object>
+            </child>
+            <child type="end">
               <object class="GtkButton" id="duplicate_button">
                 <property name="icon-name">edit-copy-symbolic</property>
                 <property name="tooltip-text">Duplicate Note</property>
@@ -151,6 +157,16 @@
                     <property name="tooltip-text">Note text, saved automatically</property>
                   </object>
                 </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="source_button">
+                <property name="label">Open Source</property>
+                <property name="icon-name">web-browser-symbolic</property>
+                <property name="tooltip-text">Open linked source website</property>
+                <property name="halign">start</property>
+                <property name="margin-start">12</property>
+                <property name="visible">False</property>
               </object>
             </child>
             <child>

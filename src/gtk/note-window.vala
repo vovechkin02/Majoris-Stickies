@@ -13,6 +13,10 @@ namespace Stickies {
         [GtkChild]
         private unowned Gtk.Button manager_button;
         [GtkChild]
+        private unowned Gtk.Button screenshot_button;
+        [GtkChild]
+        private unowned Gtk.Button source_button;
+        [GtkChild]
         private unowned Gtk.MenuButton color_button;
         [GtkChild]
         private unowned Gtk.Button duplicate_button;
@@ -77,6 +81,8 @@ namespace Stickies {
             body_view.buffer.changed.connect (on_body_changed);
             manager_button.clicked.connect (() => owner.show_manager ());
             duplicate_button.clicked.connect (() => owner.duplicate_and_open_note (note.id));
+            screenshot_button.clicked.connect (() => owner.capture_screenshot (note.id));
+            source_button.clicked.connect (open_source_url);
             delete_button.clicked.connect (() => owner.confirm_delete_note (note.id, this));
             repository.note_updated.connect (on_note_updated);
             repository.note_saved.connect (on_note_saved);
@@ -109,6 +115,8 @@ namespace Stickies {
                 last_rendered_formatting = note.formatting;
             }
             apply_color (note.color);
+            source_button.visible = note.source_url != "";
+            source_button.tooltip_text = note.source_url != "" ? note.source_url : null;
             apply_presentation ();
             is_syncing_view = false;
         }
@@ -187,6 +195,19 @@ namespace Stickies {
                 popover.popdown ();
             });
             menu.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+            menu_item (menu, "Copy Note", () => {
+                owner.copy_note (note.id);
+                popover.popdown ();
+            });
+            menu_item (menu, "Edit Source URL…", () => {
+                popover.popdown ();
+                edit_source_url ();
+            });
+            menu_item (menu, "Attach Screenshot…", () => {
+                popover.popdown ();
+                owner.capture_screenshot (note.id);
+            });
+            menu.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
             menu_item (menu, "Attach Image or PDF…", () => {
                 popover.popdown ();
                 choose_attachment ();
@@ -202,6 +223,46 @@ namespace Stickies {
             popover.set_child (menu);
             more_button.popover = popover;
             apply_presentation ();
+        }
+
+        /** Edits an explicit web origin; screenshots never fabricate a source URL. */
+        private void edit_source_url () {
+            var editor = new Gtk.Entry ();
+            editor.text = note.source_url;
+            editor.placeholder_text = "https://example.com/page";
+            editor.hexpand = true;
+            editor.input_purpose = Gtk.InputPurpose.URL;
+            var dialog = new Adw.AlertDialog (
+                "Source Website", "Add an HTTP(S) link to the original page. " +
+                "Stickies does not automatically inspect other browser windows."
+            );
+            dialog.set_extra_child (editor);
+            dialog.add_response ("cancel", "Cancel");
+            dialog.add_response ("save", "Save Source");
+            dialog.set_default_response ("save");
+            dialog.set_close_response ("cancel");
+            dialog.response.connect ((response) => {
+                if (response == "save") {
+                    try {
+                        repository.set_source_url (note.id, editor.text);
+                    } catch (Error error) {
+                        show_save_failure (error.message);
+                    }
+                }
+            });
+            dialog.present (this);
+        }
+
+        /** Opens only a previously validated HTTP(S) source in the default browser. */
+        private void open_source_url () {
+            if (note.source_url == "") {
+                return;
+            }
+            try {
+                GLib.AppInfo.launch_default_for_uri (note.source_url, null);
+            } catch (Error error) {
+                show_save_failure ("Unable to open source: " + error.message);
+            }
         }
 
         /** Adds a text-only item, leaving menu item styling to the global theme. */

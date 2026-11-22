@@ -23,6 +23,12 @@
               </object>
             </child>
             <child type="end">
+              <object class="GtkButton" id="screenshot_button">
+                <property name="icon-name">camera-photo-symbolic</property>
+                <property name="tooltip-text">New Note from Screenshot (Ctrl+Shift+S)</property>
+              </object>
+            </child>
+            <child type="end">
               <object class="GtkMenuButton" id="arrange_button">
                 <property name="icon-name">view-grid-symbolic</property>
                 <property name="tooltip-text">Arrange Note Windows</property>
@@ -47,6 +53,38 @@
                         <property name="hexpand">True</property>
                         <property name="placeholder-text">Search notes</property>
                         <property name="tooltip-text">Search note titles and text</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">8</property>
+                    <property name="margin-start">18</property>
+                    <property name="margin-end">18</property>
+                    <property name="margin-bottom">12</property>
+                    <child>
+                      <object class="GtkDropDown" id="color_filter">
+                        <property name="tooltip-text">Filter notes by color</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkDropDown" id="sort_dropdown">
+                        <property name="tooltip-text">Sort notes</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkToggleButton" id="list_toggle">
+                        <property name="icon-name">view-list-symbolic</property>
+                        <property name="tooltip-text">Switch between grid and list views</property>
+                        
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="count_label">
+                        <property name="hexpand">True</property>
+                        <property name="halign">end</property>
+                        <property name="label">0 notes</property>
                       </object>
                     </child>
                   </object>

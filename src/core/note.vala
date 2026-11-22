@@ -18,6 +18,9 @@ namespace Stickies {
         /** Bounded style intervals expressed in Unicode character positions. */
         public string formatting { get; private set; default = ""; }
 
+        /** Optional user-verified HTTP(S) origin for this note or capture. */
+        public string source_url { get; private set; default = ""; }
+
         /** Whether only the note header is displayed. */
         public bool is_collapsed { get; private set; default = false; }
 
@@ -62,7 +65,8 @@ namespace Stickies {
             bool is_translucent = false,
             int window_width = 370,
             int window_height = 330,
-            bool is_visible = false
+            bool is_visible = false,
+            string source_url = ""
         ) {
             Object ();
             this.id = id;
@@ -78,6 +82,23 @@ namespace Stickies {
             this.window_width = window_width >= 240 && window_width <= 4000 ? window_width : 370;
             this.window_height = window_height >= 120 && window_height <= 4000 ? window_height : 330;
             this.is_visible = is_visible;
+            try {
+                this.source_url = SourceLink.normalize (source_url);
+            } catch (Error error) {
+                warning ("Ignoring an invalid stored source URL: %s", error.message);
+                this.source_url = "";
+            }
+        }
+
+        /** Applies a validated origin without corrupting the existing note. */
+        internal bool update_source_url (string value) throws Error {
+            var normalized = SourceLink.normalize (value);
+            if (source_url == normalized) {
+                return false;
+            }
+            source_url = normalized;
+            touch ();
+            return true;
         }
 
         /** Changes the heading, returning false when no actual edit occurred. */

@@ -84,6 +84,7 @@ namespace Stickies {
 
             var copy = insert_note ("Copy of " + source.title, source.content, source.color);
             set_body (copy.id, source.content, source.formatting);
+            set_source_url (copy.id, source.source_url);
             flush_note (copy.id);
             return copy;
         }
@@ -117,7 +118,8 @@ namespace Stickies {
             foreach (var note in list_notes ()) {
                 if (needle == "" ||
                     note.title.casefold ().index_of (needle) >= 0 ||
-                    note.content.casefold ().index_of (needle) >= 0) {
+                    note.content.casefold ().index_of (needle) >= 0 ||
+                    note.source_url.casefold ().index_of (needle) >= 0) {
                     result.add (note);
                 }
             }
@@ -145,6 +147,17 @@ namespace Stickies {
         public void set_body (string id, string text, string formatting) {
             var note = find_note (id);
             if (note != null && note.update_body (text, formatting)) {
+                queue_save (note);
+            }
+        }
+
+        /** Changes a note's verified web origin and queues an atomic save. */
+        public void set_source_url (string id, string url) throws Error {
+            var note = find_note (id);
+            if (note == null) {
+                throw new IOError.NOT_FOUND ("The note no longer exists");
+            }
+            if (note.update_source_url (url)) {
                 queue_save (note);
             }
         }
@@ -405,7 +418,7 @@ namespace Stickies {
         /** Migrates Stage 1 in-place and rejects unknown newer schemas. */
         private void initialize_schema () throws Error {
             int version = read_schema_version ();
-            if (version > 2) {
+            if (version > 3) {
                 throw new IOError.NOT_SUPPORTED (
                     "This notes database was created by a newer version of Stickies"
                 );
@@ -438,6 +451,17 @@ namespace Stickies {
                     );
                     execute ("CREATE INDEX attachments_note_idx ON attachments(note_id)");
                     execute ("PRAGMA user_version=2");
+                    execute ("COMMIT");
+                } catch (Error error) {
+                    execute ("ROLLBACK");
+                    throw error;
+                }
+            }
+            if (version < 3) {
+                execute ("BEGIN IMMEDIATE");
+                try {
+                    execute ("ALTER TABLE notes ADD COLUMN source_url TEXT NOT NULL DEFAULT ''");
+                    execute ("PRAGMA user_version=3");
                     execute ("COMMIT");
                 } catch (Error error) {
                     execute ("ROLLBACK");
@@ -478,7 +502,7 @@ namespace Stickies {
             prepare (
                 "SELECT id, title, content, color, created_at_us, updated_at_us, " +
                 "formatting, collapsed, floating, translucent, " +
-                "window_width, window_height, visible FROM notes",
+                "window_width, window_height, visible, source_url FROM notes",
                 out statement
             );
 
@@ -497,7 +521,8 @@ namespace Stickies {
                     statement.column_int (9) != 0,
                     statement.column_int (10),
                     statement.column_int (11),
-                    statement.column_int (12) != 0
+                    statement.column_int (12) != 0,
+                    statement.column_text (13) ?? ""
                 );
                 notes.set (note.id, note);
             }
@@ -513,15 +538,15 @@ namespace Stickies {
             prepare (
                 "INSERT INTO notes " +
                 "(id, title, content, color, created_at_us, updated_at_us, " +
-                "formatting, collapsed, floating, translucent, window_width, window_height, visible) " +
-                "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) " +
+                "formatting, collapsed, floating, translucent, window_width, window_height, visible, " +
+                "source_url) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) " +
                 "ON CONFLICT(id) DO UPDATE SET " +
                 "title=excluded.title, content=excluded.content, " +
                 "color=excluded.color, updated_at_us=excluded.updated_at_us, " +
                 "formatting=excluded.formatting, collapsed=excluded.collapsed, " +
                 "floating=excluded.floating, translucent=excluded.translucent, " +
                 "window_width=excluded.window_width, window_height=excluded.window_height, " +
-                "visible=excluded.visible",
+                "visible=excluded.visible, source_url=excluded.source_url",
                 out statement
             );
             check_bind (statement.bind_text (1, note.id));
@@ -537,6 +562,7 @@ namespace Stickies {
             check_bind (statement.bind_int (11, note.window_width));
             check_bind (statement.bind_int (12, note.window_height));
             check_bind (statement.bind_int (13, note.is_visible ? 1 : 0));
+            check_bind (statement.bind_text (14, note.source_url));
             check_step (statement.step ());
         }
 

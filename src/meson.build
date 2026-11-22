@@ -3,6 +3,8 @@ core_sources = files(
   'core/note-formatting.vala',
   'core/note-palette.vala',
   'core/note-repository.vala',
+  'core/note-transfer.vala',
+  'core/source-link.vala',
   'core/note.vala',
 )
 
@@ -13,6 +15,7 @@ gtk_sources = files(
 )
 
 service_sources = files(
+  'services/screenshot-portal.vala',
   'services/shell-window-bridge.vala',
 )
 

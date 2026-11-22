@@ -12,15 +12,17 @@ namespace Stickies {
         private bool styles_loaded = false;
         private bool windows_restored = false;
         private ShellWindowBridge shell_bridge;
+        private ScreenshotPortal screenshot_portal;
 
         /** Initializes the single-instance desktop application and its window registry. */
         public StickiesApp () {
             Object (
                 application_id: "com.majoris.stickies",
-                flags: GLib.ApplicationFlags.FLAGS_NONE
+                flags: GLib.ApplicationFlags.HANDLES_COMMAND_LINE
             );
             note_windows = new Gee.HashMap<string, NoteWindow> ();
             shell_bridge = new ShellWindowBridge ();
+            screenshot_portal = new ScreenshotPortal ();
         }
 
         /** Registers application actions and their keyboard shortcuts. */
@@ -39,6 +41,31 @@ namespace Stickies {
             });
             add_action (search_action);
             set_accels_for_action ("app.search-notes", { "<Primary>f" });
+
+            var capture_action = new GLib.SimpleAction ("capture-screenshot", null);
+            capture_action.activate.connect ((parameter) => capture_screenshot ());
+            add_action (capture_action);
+            set_accels_for_action ("app.capture-screenshot", { "<Primary><Shift>s" });
+        }
+
+        /** Dispatches supported desktop actions in the existing application instance. */
+        protected override int command_line (GLib.ApplicationCommandLine command) {
+            var arguments = command.get_arguments ();
+            if (arguments.length > 2) {
+                return 2;
+            }
+            var option = arguments.length == 2 ? arguments[1] : "";
+            if (option != "" && option != "--new-note" &&
+                option != "--capture-screenshot" && option != "--show-notes") {
+                return 2;
+            }
+            activate ();
+            if (option == "--new-note") {
+                create_and_open_note ();
+            } else if (option == "--capture-screenshot") {
+                capture_screenshot ();
+            }
+            return 0;
         }
 
         /** Loads local notes and presents the main manager on activation. */
@@ -130,6 +157,92 @@ namespace Stickies {
                 open_note (duplicate.id);
             } catch (Error error) {
                 report_operation_error ("Unable to duplicate note", error.message);
+            }
+        }
+
+        /** Copies both plain text and safe HTML without exporting private file paths. */
+        public void copy_note (string id) {
+            var store = repository;
+            if (store == null) {
+                return;
+            }
+            var note = store.find_note (id);
+            if (note == null) {
+                report_operation_error ("Cannot copy note", "The note no longer exists");
+                return;
+            }
+            try {
+                var attachments = store.list_attachments (id);
+                var plain = NoteTransfer.to_plain_text (note, attachments);
+                var html = NoteTransfer.to_html (note, attachments);
+                var plain_provider = new Gdk.ContentProvider.for_bytes (
+                    "text/plain;charset=utf-8", new GLib.Bytes ((uint8[]) plain.data)
+                );
+                var html_provider = new Gdk.ContentProvider.for_bytes (
+                    "text/html", new GLib.Bytes ((uint8[]) html.data)
+                );
+                var provider = new Gdk.ContentProvider.union ({
+                    plain_provider, html_provider
+                });
+                var display = Gdk.Display.get_default ();
+                if (display == null || !display.get_clipboard ().set_content (provider)) {
+                    throw new IOError.FAILED ("The desktop clipboard is unavailable");
+                }
+                if (manager_window != null) {
+                    manager_window.show_message ("Copied note text and formatting");
+                }
+            } catch (Error error) {
+                report_operation_error ("Could not copy note", error.message);
+            }
+        }
+
+        /** Opens the desktop's interactive screenshot selector for a new note. */
+        public void capture_screenshot (string? destination_note_id = null) {
+            capture_screenshot_async.begin (destination_note_id);
+        }
+
+        /** Captures with consent, then stores the resulting image as an attachment. */
+        private async void capture_screenshot_async (string? destination_note_id) {
+            hold ();
+            var store = repository;
+            if (store == null) {
+                release ();
+                return;
+            }
+            bool created = false;
+            string? target_id = destination_note_id;
+            try {
+                var screenshot = yield screenshot_portal.capture ();
+                if (target_id == null) {
+                    var note = store.create_note ();
+                    target_id = note.id;
+                    created = true;
+                    store.set_title (target_id, "Screenshot");
+                }
+                string note_id = target_id ?? "";
+                if (note_id == "") {
+                    throw new IOError.FAILED ("No destination note was selected");
+                }
+                yield store.attach_file (note_id, screenshot);
+                if (created) {
+                    open_note (note_id);
+                }
+                if (manager_window != null) {
+                    manager_window.show_message ("Screenshot attached to note");
+                }
+            } catch (IOError.CANCELLED error) {
+                // A canceled permission dialog must not create an empty note.
+            } catch (Error error) {
+                if (created && target_id != null) {
+                    try {
+                        store.delete_note (target_id);
+                    } catch (Error cleanup_error) {
+                        warning ("Screenshot cleanup failed: %s", cleanup_error.message);
+                    }
+                }
+                report_operation_error ("Screenshot failed", error.message);
+            } finally {
+                release ();
             }
         }
 
