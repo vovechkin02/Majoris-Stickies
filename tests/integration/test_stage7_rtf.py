@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import sqlite3
+from contextlib import closing, contextmanager
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +14,15 @@ spec = importlib.util.spec_from_file_location("stickies_rtf", MODULE)
 assert spec is not None and spec.loader is not None
 rtf = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rtf)
+
+
+
+@contextmanager
+def _database(path: Path):
+    """Commit or roll back the test transaction and close the connection."""
+    with closing(sqlite3.connect(path)) as connection:
+        with connection:
+            yield connection
 
 
 class RtfTests(unittest.TestCase):
@@ -59,7 +69,7 @@ class RtfTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
             identifier = "6b2de3e7-066b-4c45-9992-015b3486f9d9"
-            with sqlite3.connect(data_dir / "notes.db") as database:
+            with _database(data_dir / "notes.db") as database:
                 database.execute(
                     "CREATE TABLE notes (id TEXT, title TEXT, content TEXT, "
                     "formatting TEXT, status INTEGER)"
@@ -82,7 +92,7 @@ class RtfTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
             identifier = "6b2de3e7-066b-4c45-9992-015b3486f9d9"
-            with sqlite3.connect(data_dir / "notes.db") as database:
+            with _database(data_dir / "notes.db") as database:
                 database.execute(
                     "CREATE TABLE notes (id TEXT, title TEXT, content TEXT, "
                     "formatting TEXT, status INTEGER)"

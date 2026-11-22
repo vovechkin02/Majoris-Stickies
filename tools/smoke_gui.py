@@ -10,7 +10,10 @@ GNOME Shell behavior, screen readers, portals, or native Wayland correctness.
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -32,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
         environment = dict(os.environ)
         environment["XDG_DATA_HOME"] = str(Path(root) / "data")
         environment["XDG_CONFIG_HOME"] = str(Path(root) / "config")
+        environment["XDG_CACHE_HOME"] = str(Path(root) / "cache")
+        environment["XDG_STATE_HOME"] = str(Path(root) / "state")
         environment["GDK_BACKEND"] = "x11"
         environment["GSK_RENDERER"] = "cairo"
         process = subprocess.Popen(
@@ -49,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
                 time.sleep(0.1)
             else:
                 raise RuntimeError("Timed out waiting for the notes database")
+            with closing(sqlite3.connect(f"file:{notes_path}?mode=ro", uri=True)) as database:
+                initial_count = database.execute("SELECT count(*) FROM notes").fetchone()[0]
             for option in ("--new-note", "--show-notes"):
                 command = subprocess.run(
                     [binary, option], env=environment, text=True,
@@ -59,9 +66,21 @@ def main(argv: list[str] | None = None) -> int:
                     raise RuntimeError(
                         f"{option} failed with {command.returncode}: {command.stderr}"
                     )
+            with closing(sqlite3.connect(f"file:{notes_path}?mode=ro", uri=True)) as database:
+                resulting_count = database.execute("SELECT count(*) FROM notes").fetchone()[0]
+            if resulting_count != initial_count + 1:
+                raise RuntimeError(
+                    "New Note did not persist exactly one note, or Show Notes created an extra"
+                )
+            invalid = subprocess.run(
+                [binary, "--unknown-option"], env=environment, text=True,
+                capture_output=True, timeout=COMMAND_TIMEOUT_SECONDS, check=False,
+            )
+            if invalid.returncode != 2:
+                raise RuntimeError("An invalid desktop action was unexpectedly accepted")
             if process.poll() is not None:
                 raise RuntimeError("The primary Stickies process crashed during activation")
-        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        except (OSError, sqlite3.Error, RuntimeError, subprocess.TimeoutExpired) as error:
             print(f"GTK smoke test failed: {error}", file=sys.stderr)
             return 1
         finally:

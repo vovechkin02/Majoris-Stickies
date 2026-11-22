@@ -13,8 +13,10 @@ class ResourceLayoutTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        """Resolve the data directory supplied by Meson's integration test."""
-        cls.data_dir = Path(sys.argv[1])
+        """Use Meson's explicit data path or the repository-local fixtures."""
+        project_data = Path(__file__).resolve().parents[2] / "data"
+        selected = Path(sys.argv[1]) if len(sys.argv) == 2 else project_data
+        cls.data_dir = selected if selected.is_dir() else project_data
 
     def test_resource_manifest_lists_all_ui_assets(self) -> None:
         """Require every referenced template and style file to be packaged."""

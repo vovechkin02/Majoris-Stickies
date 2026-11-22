@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 MAX_PDF_BYTES = 50 * 1024 * 1024
@@ -22,6 +23,8 @@ MAX_PNG_BYTES = 6 * 1024 * 1024
 MAX_RENDER_SECONDS = 12
 MAX_PREVIEW_EDGE = 640
 MAX_PREVIEW_PAGE = 250
+STALE_PREVIEW_SECONDS = 24 * 60 * 60
+MAX_CLEANUP_CANDIDATES = 64
 
 
 class PdfPreviewError(Exception):
@@ -84,6 +87,60 @@ def render_first_page(source: Path) -> Path:
     """Keep the Stage 8 first-page API for callers and existing tests."""
     return render_page(source, 1)
 
+def cleanup_stale_previews(
+    directory: Path | None = None,
+    now: float | None = None,
+) -> int:
+    """Remove bounded, old, privately owned preview outputs left by crashes.
+
+    Only delete a private directory containing exactly one regular page.png.
+    Avoid symlink traversal and never recursively delete unrecognized content.
+    Preview directories used by active renderers are protected by the age limit.
+    """
+    root = directory if directory is not None else Path(tempfile.gettempdir())
+    cutoff = (time.time() if now is None else now) - STALE_PREVIEW_SECONDS
+    removed = 0
+    examined = 0
+    try:
+        candidates = root.glob("majoris-stickies-pdf-*")
+        for candidate in candidates:
+            examined += 1
+            if examined > MAX_CLEANUP_CANDIDATES:
+                break
+            try:
+                info = candidate.lstat()
+                if (
+                    not stat.S_ISDIR(info.st_mode)
+                    or info.st_uid != os.getuid()
+                    or info.st_mode & 0o077
+                    or info.st_mtime > cutoff
+                ):
+                    continue
+                children = list(candidate.iterdir())
+                if len(children) != 1 or children[0].name != "page.png":
+                    continue
+                preview = children[0]
+                image_info = preview.lstat()
+                if (
+                    not stat.S_ISREG(image_info.st_mode)
+                    or image_info.st_uid != os.getuid()
+                    or image_info.st_size > MAX_PNG_BYTES
+                    or image_info.st_mtime > cutoff
+                ):
+                    continue
+                preview.unlink()
+                candidate.rmdir()
+                removed += 1
+            except OSError:
+                # Concurrent cleanup or an unfamiliar directory must not
+                # prevent users from previewing their documents.
+                continue
+    except OSError:
+        return removed
+    return removed
+
+
+
 
 def _is_valid_output(path: Path) -> bool:
     """Keep only an ordinary, nonempty PNG within the fixed preview limit."""
@@ -104,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--page", type=int, default=1)
     parser.add_argument("source", type=Path)
     args = parser.parse_args(argv)
+    cleanup_stale_previews()
     try:
         output = render_page(args.source, args.page)
         print(output)

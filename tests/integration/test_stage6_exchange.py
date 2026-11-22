@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+from contextlib import closing, contextmanager
 import tempfile
 import unittest
 import uuid
@@ -18,6 +19,15 @@ exchange = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(exchange)
 
 
+
+@contextmanager
+def _database(path: Path):
+    """Commit or roll back the test transaction and close the connection."""
+    with closing(sqlite3.connect(path)) as connection:
+        with connection:
+            yield connection
+
+
 class Stage6ExchangeTests(unittest.TestCase):
     """Verify v5 lifecycle sharing and strict handling of untrusted states."""
 
@@ -29,7 +39,7 @@ class Stage6ExchangeTests(unittest.TestCase):
         self.note_id = str(uuid.uuid4())
         self.store = self.root / "store"
         self.store.mkdir()
-        with sqlite3.connect(self.store / "notes.db") as db:
+        with _database(self.store / "notes.db") as db:
             db.executescript("""
                 PRAGMA user_version=5;
                 CREATE TABLE notes (
@@ -75,7 +85,7 @@ class Stage6ExchangeTests(unittest.TestCase):
 
     def test_reject_unknown_state(self) -> None:
         """Reject serialized lifecycle states outside the domain contract."""
-        with sqlite3.connect(self.store / "notes.db") as db:
+        with _database(self.store / "notes.db") as db:
             db.execute("UPDATE notes SET status=99")
         with self.assertRaises(exchange.ExchangeError):
             exchange.share_note(self.store, self.note_id, self.root / "invalid.stickies")

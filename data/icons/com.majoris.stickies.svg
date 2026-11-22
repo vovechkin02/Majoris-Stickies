@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Majoris Stickies</title>
+  <path fill="#5254CF" d="M20 13h88a7 7 0 0 1 7 7v65L85 115H20a7 7 0 0 1-7-7V20a7 7 0 0 1 7-7z"/>
+  <path fill="#F8E58C" d="M23 18h80a6 6 0 0 1 6 6v59L83 109H23a5 5 0 0 1-5-5V23a5 5 0 0 1 5-5z"/>
+  <path fill="#D0B86C" d="M83 109V88a5 5 0 0 1 5-5h21z"/>
+  <path fill="none" stroke="#4E4562" stroke-linecap="round" stroke-width="6" d="M36 43h54M36 60h54M36 77h30"/>
+  <path fill="none" stroke="#6366F1" stroke-linecap="round" stroke-width="5" d="M20 20h86"/>
+</svg>

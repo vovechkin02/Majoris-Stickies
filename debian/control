@@ -28,7 +28,7 @@ Description: Native desktop sticky notes for Majoris OS
 
 Package: gnome-shell-extension-majoris-stickies
 Architecture: all
-Depends: ${misc:Depends}, gnome-shell (>= 48)
+Depends: ${misc:Depends}, gnome-shell (>= 48), gnome-shell (<< 51)
 Enhances: majoris-stickies
 Description: Optional GNOME Shell integration for Majoris Stickies
  Provides compositor-managed floating notes, saved positions, and

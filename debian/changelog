@@ -1,3 +1,15 @@
+majoris-stickies (0.9.0-1) unstable; urgency=medium
+
+  * Add branded scalable application icon and synchronized desktop/AppStream metadata.
+  * Improve offline native test discovery and single-instance GUI smoke coverage.
+  * Protect and clean up stale Poppler preview directories from previous crashes.
+  * Constrain optional Shell extension to the declared GNOME 48–50 range.
+  * Add explicit release preflight and native validation guidance.
+  * Retain SQLite schema v5 and all stored note and attachment formats.
+  * Native Vala/GTK, Wayland and binary package qualification are still required.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Sun, 22 Nov 2026 19:07:00 +1100
+
 majoris-stickies (0.8.2-1) unstable; urgency=medium
 
   * Prevent plain-text import from overwriting concurrent editor changes.

@@ -390,3 +390,24 @@ encapsulates widget ownership and view composition. Neither an artificial
 Factory nor a Strategy interface is added where there is only one editor and
 one supported image component. The existing SQL schema and exchange tokens
 remain compatibility surfaces.
+
+## Stage 9 release engineering (v0.9.0)
+
+The GTK and domain architecture is unchanged; no database migration was added.
+The release preflight checks only installed metadata relationships and the
+availability of native toolchain prerequisites, **not** successful compilation.
+A native build failure or unavailable compositor integration must never be
+reported as a passing release gate. A separate, documented distributor contact
+is required before releasing a Debian package.
+
+`stickies_pdf_preview.py` now reclaims aged abandoned preview directories
+only when owned by the process user, private (no group/other permissions),
+older than 24 hours and containing exactly one regular `page.png` file.
+At most 64 candidate directory names are inspected per helper invocation.
+It never recurses into unfamiliar files or follows symlinked directory names.
+
+The Xvfb/D-Bus smoke harness isolates XDG data/config/cache/state roots and
+verifies persistence and single-instance command routing through the actual
+binary. It does not substitute for Wayland, Orca, GNOME Shell, Majoris Image,
+package-install/uninstall, or ISO qualification. GTK 4 and GNOME Shell runtime
+behavior must be checked on the shipping Majoris system.

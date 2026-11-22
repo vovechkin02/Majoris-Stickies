@@ -3,6 +3,7 @@ usr/bin/majoris-stickies-backup
 usr/bin/majoris-stickies-exchange
 usr/share/applications/com.majoris.stickies.desktop
 usr/share/metainfo/com.majoris.stickies.metainfo.xml
+usr/share/icons/hicolor/scalable/apps/com.majoris.stickies.svg
 usr/bin/majoris-stickies-rtf
 usr/bin/majoris-stickies-rtf-import
 usr/bin/majoris-stickies-pdf-preview

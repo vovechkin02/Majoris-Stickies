@@ -8,6 +8,11 @@ install_data(
   install_dir: get_option('datadir') / 'metainfo',
 )
 
+install_data(
+  'icons/com.majoris.stickies.svg',
+  install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps',
+)
+
 if get_option('shell_extension')
   install_data(
     '../shell/majoris-stickies@majoris.org/metadata.json',

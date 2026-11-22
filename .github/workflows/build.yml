@@ -16,9 +16,13 @@ jobs:
             ca-certificates git build-essential meson ninja-build valac python3 \
             debhelper dpkg-dev pkgconf xvfb xauth dbus-x11 \
             libglib2.0-dev libgee-0.8-dev libgtk-4-dev libadwaita-1-dev \
-            libsqlite3-dev nodejs poppler-utils
+            libsqlite3-dev nodejs poppler-utils desktop-file-utils
       - name: Check out source
         uses: actions/checkout@v4
+      - name: Release metadata and native prerequisite preflight
+        run: |
+          python3 tools/release_preflight.py --require-native
+          desktop-file-validate data/com.majoris.stickies.desktop
       - name: Configure
         run: meson setup build -Dwarning_level=3 -Dimagekit=disabled
       - name: Compile
@@ -35,6 +39,12 @@ jobs:
         run: xvfb-run -a dbus-run-session -- python3 tools/smoke_gui.py build/src/majoris-stickies
       - name: Debian binary packages
         run: dpkg-buildpackage -b -us -uc
+      - name: Verify installed icon and desktop entry in built package
+        run: |
+          package=$(find .. -maxdepth 1 -type f -name 'majoris-stickies_*_*.deb' -print -quit)
+          test -n "$package"
+          dpkg-deb --contents "$package" | grep -F '/usr/share/icons/hicolor/scalable/apps/com.majoris.stickies.svg'
+          dpkg-deb --contents "$package" | grep -F '/usr/share/applications/com.majoris.stickies.desktop'
       - name: Shell JavaScript validation
         run: |
           node --check shell/majoris-stickies@majoris.org/extension.js

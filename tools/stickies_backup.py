@@ -7,6 +7,8 @@ never replace the active application data directory while the app is running.
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import argparse
 import hashlib
 import json
@@ -54,7 +56,7 @@ def _digest_stream(source: BinaryIO, destination: BinaryIO | None = None) -> tup
 def _quick_check(database_path: Path) -> tuple[int, list[str]]:
     """Validate a self-contained SQLite snapshot and identify referenced assets."""
     uri = f"file:{quote(str(database_path.absolute()))}?mode=ro"
-    with sqlite3.connect(uri, uri=True) as connection:
+    with closing(sqlite3.connect(uri, uri=True)) as connection:
         if connection.execute("PRAGMA quick_check(1)").fetchone() != ("ok",):
             raise BackupError("SQLite integrity validation failed")
         if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
@@ -96,8 +98,8 @@ def create_backup(data_dir: Path, archive_path: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="stickies-snapshot-") as scratch:
         database_copy = Path(scratch) / "notes.db"
         source_uri = f"file:{quote(str(data_dir / 'notes.db'))}?mode=ro"
-        with sqlite3.connect(source_uri, uri=True, timeout=5) as source:
-            with sqlite3.connect(database_copy) as target:
+        with closing(sqlite3.connect(source_uri, uri=True, timeout=5)) as source:
+            with closing(sqlite3.connect(database_copy)) as target:
                 source.backup(target, pages=256, sleep=0.05)
         version, asset_names = _quick_check(database_copy)
         inputs = {"notes.db": database_copy}

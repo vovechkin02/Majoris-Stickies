@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.8.2 (Stage 8 final functional pass; native release gate pending)  
+**Version:** 0.9.0 (Stage 9 release-hardening source candidate; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,36 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## Stage 9 release-hardening pass (v0.9.0)
+
+This update addresses release engineering and runtime reliability; it does not
+claim complete GUI qualification or introduce new note formats.
+
+- Ships a native **Majoris Stickies SVG application icon** in the desktop and
+  Debian packages, alongside synchronized version and AppStream metadata.
+- Adds a release metadata/native prerequisite preflight (`tools/release_preflight.py`).
+  Its strict `--release` gate requires an official maintainer contact and
+  installed native dependencies; passing static checks is not a build pass.
+- Makes the UI-resource regression tests work under standard Python unittest
+  discovery as well as the Meson-provided data-directory argument.
+- Extends isolated Xvfb/D-Bus smoke checks to verify note creation in SQLite,
+  command-line rejection of invalid actions and preserved note count.
+- Cleans up only **stale, owned, private PDF preview directories** left after
+  a crash. Unrecognized, fresh, public, or symlinked directories are untouched.
+- Constrains the optional extension's Debian dependencies to the GNOME 48–50
+  releases currently declared in its metadata. GNOME 51 is not presumed safe.
+- Leaves SQLite schema v5, existing notes, formatting, attachments, and exchange
+  formats unchanged. Majoris Image remains the sole image preview provider.
+
+**Qualification status:** This build environment has no Vala compiler, Meson,
+GTK development libraries, or working Debian repository DNS. The source tests
+run, but the native executable, ImageKit-enabled build, Xvfb smoke test,
+GNOME Wayland extension behavior, Orca accessibility, and .deb package build
+remain **not run**. Do not distribute as a verified stable ISO component until
+those checks pass and the official packaging maintainer contact is provided.
+
+See [`docs/stage-9-qualification.md`](docs/stage-9-qualification.md).
 
 ## Stage 8 final pass (v0.8.2)
 
@@ -492,7 +522,9 @@ The Shell D-Bus endpoint is a private integration contract; see its README.
 ## Testing and qualification
 
 ```sh
+python3 tools/release_preflight.py
 meson test -C build --print-errorlogs
+python3 -m unittest discover -s tests/integration -p 'test_*.py'
 python3 tests/integration/test_resource_layout.py data
 node --check shell/majoris-stickies@majoris.org/extension.js
 node --experimental-default-type=module tests/integration/test_layout.mjs
@@ -532,6 +564,6 @@ GPL-3.0-or-later; see [LICENSE](LICENSE). Original source is distributed,
 without bundling third-party binaries, image assets or Majoris Image itself.
 
 Stage-specific changes and required acceptance checks are recorded in
-[Stage 8 completion](docs/stage-8-completion.md). Earlier Stage 3
+[Stage 9 qualification](docs/stage-9-qualification.md). Earlier Stage 3
 screenshots and clipboard behavior remain documented in
 [Stage 3 qualification](docs/stage-3-qualification.md).

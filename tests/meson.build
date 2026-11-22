@@ -175,3 +175,13 @@ test(
          '-p', 'test_stage8_final.py'],
   suite: 'integration',
 )
+
+# Keep Stage 9 checks focused on installed metadata and safe preview cleanup.
+test(
+  'Stage 9 release metadata and preview recovery',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage9_release.py'],
+  suite: 'integration',
+)

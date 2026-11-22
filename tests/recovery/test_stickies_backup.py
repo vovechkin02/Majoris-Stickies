@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing, contextmanager
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,15 @@ from stickies_backup import BackupError, create_backup, restore_backup, verify_b
 
 NOTE_ID = "d9fa3a03-3fb0-40d5-acf7-e92f00c45bb1"
 ASSET_ID = "ec59a732-0931-4220-9ddf-770f3356fa98"
+
+
+
+@contextmanager
+def _database(path: Path):
+    """Commit or roll back the test transaction and close the connection."""
+    with closing(sqlite3.connect(path)) as connection:
+        with connection:
+            yield connection
 
 
 class RecoveryTests(unittest.TestCase):
@@ -81,7 +91,7 @@ class RecoveryTests(unittest.TestCase):
         verify_backup(self.archive_path)
         target = self.root / "restored"
         restore_backup(self.archive_path, target)
-        with sqlite3.connect(target / "notes.db") as saved:
+        with _database(target / "notes.db") as saved:
             self.assertEqual(
                 saved.execute("SELECT content FROM notes WHERE id=?", (NOTE_ID,)).fetchone(),
                 ("Résumé: 道",),
@@ -111,7 +121,7 @@ class RecoveryTests(unittest.TestCase):
         verify_backup(self.archive_path)
         target = self.root / "stage5-restored"
         restore_backup(self.archive_path, target)
-        with sqlite3.connect(target / "notes.db") as database:
+        with _database(target / "notes.db") as database:
             self.assertEqual(database.execute("PRAGMA user_version").fetchone(), (4,))
             self.assertEqual(
                 database.execute("SELECT remind_at_us FROM notes").fetchone(),
@@ -126,7 +136,7 @@ class RecoveryTests(unittest.TestCase):
         for suffix in ("", "-shm", "-wal"):
             (self.data_dir / f"notes.db{suffix}").unlink(missing_ok=True)
         (self.data_dir / "attachments" / f"{ASSET_ID}.asset").unlink()
-        with sqlite3.connect(self.database_path) as database:
+        with _database(self.database_path) as database:
             database.execute(
                 "CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT, content TEXT, "
                 "color TEXT, created_at_us INTEGER, updated_at_us INTEGER)"
@@ -140,7 +150,7 @@ class RecoveryTests(unittest.TestCase):
         verify_backup(self.archive_path)
         target = self.root / "stage1-restored"
         restore_backup(self.archive_path, target)
-        with sqlite3.connect(target / "notes.db") as database:
+        with _database(target / "notes.db") as database:
             self.assertEqual(database.execute("PRAGMA user_version").fetchone(), (1,))
             self.assertEqual(database.execute("SELECT title FROM notes").fetchone(),
                              ("Legacy",))

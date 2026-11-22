@@ -8,6 +8,8 @@ and PDF attachments are deliberately not embedded or exported.
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import argparse
 import os
 import re
@@ -138,7 +140,7 @@ def export_note(data_dir: Path, note_id: str, destination: Path) -> None:
         raise RtfExportError("No supported notes database was found")
     database_uri = f"file:{quote(str(database.absolute()))}?mode=ro"
     try:
-        with sqlite3.connect(database_uri, uri=True, timeout=5) as connection:
+        with closing(sqlite3.connect(database_uri, uri=True, timeout=5)) as connection:
             row = connection.execute(
                 "SELECT title, content, formatting FROM notes WHERE id = ? AND status = 0",
                 (note_id,),
