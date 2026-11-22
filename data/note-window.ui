@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="Adw" version="1.0"/>
+  <template class="StickiesNoteWindow" parent="AdwApplicationWindow">
+    <property name="title">Note — Stickies</property>
+    <property name="default-width">370</property>
+    <property name="default-height">330</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <child type="start">
+              <object class="GtkButton" id="manager_button">
+                <property name="icon-name">view-list-symbolic</property>
+                <property name="tooltip-text">All Notes</property>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkMenuButton" id="color_button">
+                <property name="icon-name">applications-graphics-symbolic</property>
+                <property name="tooltip-text">Note Color</property>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton" id="duplicate_button">
+                <property name="icon-name">edit-copy-symbolic</property>
+                <property name="tooltip-text">Duplicate Note</property>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton" id="delete_button">
+                <property name="icon-name">user-trash-symbolic</property>
+                <property name="tooltip-text">Delete Note</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <property name="content">
+          <object class="GtkBox" id="paper_box">
+            <property name="orientation">vertical</property>
+            <property name="spacing">8</property>
+            <property name="margin-start">0</property>
+            <property name="margin-end">0</property>
+            <child>
+              <object class="GtkEntry" id="title_entry">
+                <property name="placeholder-text">Note title</property>
+                <property name="max-length">160</property>
+                <property name="margin-start">12</property>
+                <property name="margin-end">12</property>
+                <property name="margin-top">12</property>
+                <property name="hexpand">True</property>
+                <property name="has-frame">False</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkScrolledWindow">
+                <property name="vexpand">True</property>
+                <property name="hscrollbar-policy">never</property>
+                <child>
+                  <object class="GtkTextView" id="body_view">
+                    <property name="wrap-mode">word-char</property>
+                    <property name="left-margin">12</property>
+                    <property name="right-margin">12</property>
+                    <property name="top-margin">4</property>
+                    <property name="bottom-margin">4</property>
+                    <property name="accepts-tab">True</property>
+                    <property name="tooltip-text">Note text, saved automatically</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="save_label">
+                <property name="label">Saved</property>
+                <property name="halign">end</property>
+                <property name="margin-end">14</property>
+                <property name="margin-bottom">10</property>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>

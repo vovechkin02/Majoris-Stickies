@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/com/majoris/stickies">
+    <file>manager-window.ui</file>
+    <file>note-window.ui</file>
+    <file>note-colors.css</file>
+  </gresource>
+</gresources>

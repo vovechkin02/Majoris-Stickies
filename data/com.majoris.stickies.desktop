@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Stickies
+Comment=Quick notes on your Majoris desktop
+Exec=majoris-stickies
+Icon=accessories-text-editor
+Terminal=false
+Categories=Utility;Office;
+StartupNotify=true
+DBusActivatable=false
+Keywords=Notes;Sticky;Memo;Reminders;

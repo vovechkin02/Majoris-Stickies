@@ -1,0 +1,26 @@
+name: Debian 13 build and tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates git build-essential meson ninja-build valac python3 \
+            libglib2.0-dev libgee-0.8-dev libgtk-4-dev libadwaita-1-dev \
+            libsqlite3-dev
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Configure
+        run: meson setup build -Dwarning_level=3
+      - name: Compile
+        run: meson compile -C build
+      - name: Run tests
+        run: meson test -C build --print-errorlogs

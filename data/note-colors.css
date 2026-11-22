@@ -1,0 +1,35 @@
+/*
+ * Application-specific exception to Majoris Theme: colored sticky paper is a
+ * feature, not a generic widget style. All other chrome uses Majoris Theme.
+ * Text uses high-contrast ink across all supported paper colors and modes.
+ */
+.note-paper.note-yellow, .note-card.note-yellow { background-color: #f8e58c; }
+.note-paper.note-pink, .note-card.note-pink { background-color: #f4b5c0; }
+.note-paper.note-green, .note-card.note-green { background-color: #b5e3c5; }
+.note-paper.note-blue, .note-card.note-blue { background-color: #aecbf5; }
+.note-paper.note-purple, .note-card.note-purple { background-color: #d4bdf3; }
+.note-paper.note-orange, .note-card.note-orange { background-color: #f5c8a1; }
+.note-paper.note-teal, .note-card.note-teal { background-color: #b5e8e7; }
+.note-paper.note-gray, .note-card.note-gray { background-color: #e5e5e5; }
+
+.note-paper, .note-card { color: #242424; }
+.note-paper entry, .note-paper entry > text,
+.note-paper textview, .note-paper textview text,
+.note-card label, .note-card button { color: #242424; }
+.note-paper textview, .note-paper textview text,
+.note-paper entry, .note-paper entry > text { background-color: transparent; }
+.note-card { border-radius: 8px; padding: 12px; }
+.note-card button { background: transparent; }
+.note-card button:hover { background-color: alpha(#242424, 0.08); }
+.note-card button:focus-visible { outline-color: #50429c; }
+.note-paper entry { font-weight: 700; font-size: 1.08em; }
+.note-paper label { color: #514e44; font-size: 0.85em; }
+.color-chip { min-width: 30px; min-height: 30px; border-radius: 8px; }
+.color-chip.note-yellow { background-color: #f8e58c; color: #242424; }
+.color-chip.note-pink { background-color: #f4b5c0; color: #242424; }
+.color-chip.note-green { background-color: #b5e3c5; color: #242424; }
+.color-chip.note-blue { background-color: #aecbf5; color: #242424; }
+.color-chip.note-purple { background-color: #d4bdf3; color: #242424; }
+.color-chip.note-orange { background-color: #f5c8a1; color: #242424; }
+.color-chip.note-teal { background-color: #b5e8e7; color: #242424; }
+.color-chip.note-gray { background-color: #e5e5e5; color: #242424; }

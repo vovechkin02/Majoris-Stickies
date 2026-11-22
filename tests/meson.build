@@ -1,0 +1,27 @@
+python = import('python').find_installation('python3')
+
+unit_deps = core_deps
+
+note_unit_executable = executable(
+  'test-note',
+  [core_sources, files('unit/test-note.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Note model edits and palette', note_unit_executable, suite: 'unit')
+
+repository_unit_executable = executable(
+  'test-note-repository',
+  [core_sources, files('unit/test-note-repository.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('SQLite note persistence and search', repository_unit_executable, suite: 'unit')
+
+test(
+  'UI resources and template bindings',
+  python,
+  args: [meson.current_source_dir() / 'integration/test_resource_layout.py',
+         meson.project_source_root() / 'data'],
+  suite: 'integration',
+)

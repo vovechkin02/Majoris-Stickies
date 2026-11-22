@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="Adw" version="1.0"/>
+  <template class="StickiesManagerWindow" parent="AdwApplicationWindow">
+    <property name="title">Stickies</property>
+    <property name="default-width">890</property>
+    <property name="default-height">620</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <property name="title-widget">
+              <object class="AdwWindowTitle">
+                <property name="title">Stickies</property>
+                <property name="subtitle">All Notes</property>
+              </object>
+            </property>
+            <child type="end">
+              <object class="GtkButton" id="new_button">
+                <property name="icon-name">list-add-symbolic</property>
+                <property name="tooltip-text">New Note (Ctrl+N)</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <property name="content">
+          <object class="AdwToastOverlay" id="toast_overlay">
+            <property name="child">
+              <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="spacing">0</property>
+            <child>
+              <object class="GtkBox">
+                <property name="margin-start">18</property>
+                <property name="margin-end">18</property>
+                <property name="margin-top">16</property>
+                <property name="margin-bottom">12</property>
+                <child>
+                  <object class="GtkSearchEntry" id="search_entry">
+                    <property name="hexpand">True</property>
+                    <property name="placeholder-text">Search notes</property>
+                    <property name="tooltip-text">Search note titles and text</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkScrolledWindow">
+                <property name="vexpand">True</property>
+                <property name="hscrollbar-policy">never</property>
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">10</property>
+                    <property name="margin-start">18</property>
+                    <property name="margin-end">18</property>
+                    <property name="margin-bottom">18</property>
+                    <child>
+                      <object class="GtkLabel" id="empty_label">
+                        <property name="label">No notes yet. Create your first note with the + button.</property>
+                        <property name="halign">center</property>
+                        <property name="valign">center</property>
+                        <property name="margin-top">48</property>
+                        <property name="wrap">True</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkFlowBox" id="notes_flow">
+                        <property name="selection-mode">none</property>
+                        <property name="homogeneous">True</property>
+                        <property name="column-spacing">12</property>
+                        <property name="row-spacing">12</property>
+                        <property name="min-children-per-line">1</property>
+                        <property name="max-children-per-line">3</property>
+                        <property name="halign">fill</property>
+                        <property name="valign">start</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+              </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>
