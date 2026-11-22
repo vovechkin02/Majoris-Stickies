@@ -20,9 +20,14 @@ namespace Stickies {
 
     /**
      * Exports self-contained note text and bounded rich HTML to the clipboard.
-     * Referenced files are listed by name only; their private paths are not shared.
+     * Managed paths are never exported. Bounded inline raster images may be
+     * embedded as explicit, validated data URIs by the clipboard caller.
      */
     public class NoteTransfer : GLib.Object {
+        private const int MAX_EMBEDDED_IMAGE_BYTES = 1024 * 1024;
+        private const int MAX_EMBEDDED_IMAGES = 8;
+        private const int MAX_HTML_STYLE_TYPES = 96;
+        private const int MAX_HTML_STYLE_BOUNDARIES = 2048;
         private static string[] styles = {
             "bold", "italic", "underline", "strikethrough", "monospace", "large", "small",
             "font-sans", "font-serif", "font-monospace", "size-10", "size-12",
@@ -39,8 +44,9 @@ namespace Stickies {
             "<span style=\"font-size:16pt\">", "<span style=\"font-size:18pt\">",
             "<span style=\"font-size:20pt\">", "<span style=\"font-size:24pt\">",
             "<span style=\"color:#b42318\">", "<span style=\"color:#155eef\">",
-            "<span style=\"color:#067647\">", "<span style=\"text-align:left\">",
-            "<span style=\"text-align:center\">", "<span style=\"text-align:right\">"
+            "<span style=\"color:#067647\">", "<span style=\"display:block;text-align:left\">",
+            "<span style=\"display:block;text-align:center\">",
+            "<span style=\"display:block;text-align:right\">"
         };
         private static string[] close_tags = {
             "</strong>", "</em>", "</u>", "</s>", "</code>", "</span>", "</span>",
@@ -49,12 +55,82 @@ namespace Stickies {
             "</span>", "</span>", "</span>", "</span>"
         };
 
+        /** Reads only a few small verified raster attachments without blocking the UI. */
+        public static async Gee.HashMap<string, string> load_embeddable_images_async (
+            Gee.List<NoteAttachment> attachments,
+            GLib.Cancellable? cancellable = null
+        ) throws Error {
+            var images = new Gee.HashMap<string, string> ();
+            foreach (var attachment in attachments) {
+                var mime = attachment.mime_type;
+                if (mime != "image/png" && mime != "image/jpeg" &&
+                    mime != "image/gif" && mime != "image/webp") {
+                    continue;
+                }
+                if (images.size >= MAX_EMBEDDED_IMAGES) {
+                    break;
+                }
+                var file = GLib.File.new_for_path (attachment.path);
+                var info = yield file.query_info_async (
+                    "standard::size,standard::type",
+                    GLib.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
+                    GLib.Priority.DEFAULT, cancellable
+                );
+                if (info.get_file_type () != GLib.FileType.REGULAR ||
+                    info.get_size () < 0 || info.get_size () > MAX_EMBEDDED_IMAGE_BYTES) {
+                    continue;
+                }
+                uint8[] bytes;
+                string? etag;
+                yield file.load_contents_async (cancellable, out bytes, out etag);
+                if (bytes.length == 0 || bytes.length > MAX_EMBEDDED_IMAGE_BYTES ||
+                    !has_supported_image_signature (mime, bytes)) {
+                    continue;
+                }
+                images.set (
+                    attachment.id, "data:" + mime + ";base64," + GLib.Base64.encode (bytes)
+                );
+            }
+            return images;
+        }
+
+        /** Rejects mislabeled assets before exposing data URIs to other applications. */
+        private static bool has_supported_image_signature (string mime, uint8[] content) {
+            if (mime == "image/png") {
+                return content.length >= 8 &&
+                    content[0] == 0x89 && content[1] == 0x50 &&
+                    content[2] == 0x4e && content[3] == 0x47 &&
+                    content[4] == 0x0d && content[5] == 0x0a &&
+                    content[6] == 0x1a && content[7] == 0x0a;
+            }
+            if (mime == "image/jpeg") {
+                return content.length >= 3 && content[0] == 0xff &&
+                    content[1] == 0xd8 && content[2] == 0xff;
+            }
+            if (mime == "image/gif") {
+                return content.length >= 6 && content[0] == 0x47 &&
+                    content[1] == 0x49 && content[2] == 0x46 &&
+                    content[3] == 0x38 && (content[4] == 0x37 || content[4] == 0x39) &&
+                    content[5] == 0x61;
+            }
+            if (mime == "image/webp") {
+                return content.length >= 12 && content[0] == 0x52 &&
+                    content[1] == 0x49 && content[2] == 0x46 &&
+                    content[3] == 0x46 && content[8] == 0x57 &&
+                    content[9] == 0x45 && content[10] == 0x42 &&
+                    content[11] == 0x50;
+            }
+            return false;
+        }
+
         /** Copies readable note text, the explicit source and attachment names. */
         public static string to_plain_text (Note note, Gee.List<NoteAttachment> attachments) {
             var output = new GLib.StringBuilder (note.title);
             if (note.content != "") {
                 output.append ("\n\n");
-                output.append (note.content);
+                output.append (
+                    note.content.replace (InlineImageFormat.PLACEHOLDER, "[Image attachment]")
+                );
             }
             if (note.source_url != "") {
                 output.append ("\n\nSource: ");
@@ -71,11 +147,15 @@ namespace Stickies {
         }
 
         /** Preserves supported inline styles while escaping all untrusted content. */
-        public static string to_html (Note note, Gee.List<NoteAttachment> attachments) {
+        public static string to_html (
+            Note note,
+            Gee.List<NoteAttachment> attachments,
+            Gee.Map<string, string>? embedded_images = null
+        ) {
             var output = new GLib.StringBuilder ("<html><body><h2>");
             output.append (GLib.Markup.escape_text (note.title));
             output.append ("</h2><div style=\"white-space:pre-wrap\">");
-            append_formatted_text (output, note.content, note.formatting);
+            append_formatted_text (output, note.content, note.formatting, embedded_images);
             output.append ("</div>");
             if (note.source_url != "") {
                 var escaped = GLib.Markup.escape_text (note.source_url);
@@ -86,7 +166,7 @@ namespace Stickies {
                 output.append ("</a></p>");
             }
             if (attachments.size > 0) {
-                output.append ("<p>Attachments (not copied):</p><ul>");
+                output.append ("<p>Attachments (original files not copied):</p><ul>");
                 foreach (var attachment in attachments) {
                     output.append ("<li>");
                     output.append (GLib.Markup.escape_text (attachment.display_name));
@@ -98,56 +178,132 @@ namespace Stickies {
             return output.str;
         }
 
-        /** Writes style-tag transitions at each interval boundary, not per character. */
+        /** Writes bounded rich-text transitions at each Unicode interval boundary. */
         private static void append_formatted_text (
-            GLib.StringBuilder output, string content, string serialized
+            GLib.StringBuilder output, string content, string serialized,
+            Gee.Map<string, string>? embedded_images
         ) {
             var boundaries = new Gee.ArrayList<StyleBoundary> ();
+            var opening_tags = new Gee.ArrayList<string> ();
+            var closing_tags = new Gee.ArrayList<string> ();
+            var tokens = new Gee.ArrayList<string> ();
+            var style_indexes = new Gee.HashMap<string, int> ();
             int character_count = content.char_count ();
+            for (int index = 0; index < styles.length; index++) {
+                opening_tags.add (open_tags[index]);
+                closing_tags.add (close_tags[index]);
+                tokens.add (styles[index]);
+                style_indexes.set (styles[index], index);
+            }
             if (NoteFormatting.is_valid (content, serialized)) {
                 foreach (var line in serialized.split ("\n")) {
                     if (line == "") {
                         continue;
                     }
                     var fields = line.split (":");
-                    int start = int.parse (fields[0]);
-                    int end = int.parse (fields[1]);
-                    for (int index = 0; index < styles.length; index++) {
-                        if (fields[2] == styles[index]) {
-                            boundaries.add (new StyleBoundary (start, index, 1));
-                            boundaries.add (new StyleBoundary (end, index, -1));
-                            break;
+                    var style = fields[2];
+                    if (!style_indexes.has_key (style)) {
+                        if (opening_tags.size >= MAX_HTML_STYLE_TYPES) {
+                            continue;
                         }
+                        var opening = opening_tag_for_style (style);
+                        if (opening == "") {
+                            continue;
+                        }
+                        style_indexes.set (style, opening_tags.size);
+                        opening_tags.add (opening);
+                        closing_tags.add ("</span>");
+                        tokens.add (style);
                     }
+                    var index = style_indexes.get (style);
+                    boundaries.add (new StyleBoundary (int.parse (fields[0]), index, 1));
+                    boundaries.add (new StyleBoundary (int.parse (fields[1]), index, -1));
                 }
+            }
+            if (boundaries.size > MAX_HTML_STYLE_BOUNDARIES) {
+                output.append (GLib.Markup.escape_text (
+                    content.replace (InlineImageFormat.PLACEHOLDER, "[Image attachment]")
+                ));
+                return;
             }
             boundaries.sort ((left, right) => {
                 return left.position < right.position ? -1 :
                     (left.position > right.position ? 1 : 0);
             });
 
-            int[] active = new int[styles.length];
+            int[] active = new int[opening_tags.size];
             int cursor = 0;
             int event_index = 0;
             while (event_index < boundaries.size) {
                 int next = boundaries[event_index].position;
-                append_segment (output, content, cursor, next, character_count);
-                close_active (output, active);
+                append_segment (
+                    output, content, cursor, next, character_count,
+                    active, tokens, embedded_images
+                );
+                close_active (output, active, closing_tags);
                 while (event_index < boundaries.size && boundaries[event_index].position == next) {
                     var event = boundaries[event_index++];
                     active[event.style] += event.delta;
                 }
-                open_active (output, active);
+                open_active (output, active, opening_tags);
                 cursor = next;
             }
-            append_segment (output, content, cursor, character_count, character_count);
-            close_active (output, active);
+            append_segment (
+                output, content, cursor, character_count, character_count,
+                active, tokens, embedded_images
+            );
+            close_active (output, active, closing_tags);
         }
 
-        /** Escapes the specified Unicode character range without byte-offset confusion. */
+        /** Produces a validated HTML span for a user-selected style token. */
+        private static string opening_tag_for_style (string style) {
+            string family;
+            string rgb;
+            int size_points;
+            if (TextStyleFormat.parse_font (style, out family)) {
+                return "<span style=\"font-family:" + css_font_name (family) + "\">";
+            }
+            if (TextStyleFormat.parse_color (style, out rgb)) {
+                return "<span style=\"color:#" + rgb + "\">";
+            }
+            if (TextStyleFormat.parse_size (style, out size_points)) {
+                return "<span style=\"font-size:%dpt\">".printf (size_points);
+            }
+            string attachment_id;
+            int image_width;
+            if (InlineImageFormat.parse (style, out attachment_id, out image_width)) {
+                return "<span data-note-inline-image=\"true\">";
+            }
+            switch (style) {
+                case "list-bullet":
+                    return "<span data-note-list=\"bullet\">";
+                case "list-numbered":
+                    return "<span data-note-list=\"numbered\">";
+                case "list-checklist":
+                    return "<span data-note-list=\"checklist\">";
+                default:
+                    return "";
+            }
+        }
+
+        /** CSS-escapes every Unicode character of an untrusted font-family name. */
+        private static string css_font_name (string family) {
+            var escaped = new GLib.StringBuilder ("'");
+            for (int index = 0; index < family.char_count (); index++) {
+                var offset = family.index_of_nth_char (index);
+                escaped.append_printf ("\\%x ", family.get_char (offset));
+            }
+            escaped.append ("'");
+            return escaped.str;
+        }
+
+        /** Escapes Unicode text while replacing inline object markers with readable labels. */
         private static void append_segment (
             GLib.StringBuilder output, string content, int start, int end,
-            int character_count
+            int character_count,
+            int[] active,
+            Gee.List<string> tokens,
+            Gee.Map<string, string>? embedded_images
         ) {
             if (end <= start) {
                 return;
@@ -155,25 +311,75 @@ namespace Stickies {
             int start_byte = content.index_of_nth_char (start);
             int end_byte = end == character_count ?
                 content.length : content.index_of_nth_char (end);
-            output.append (GLib.Markup.escape_text (
-                content.substring (start_byte, end_byte - start_byte)
-            ));
+            var segment = content.substring (start_byte, end_byte - start_byte);
+            string image_id = "";
+            int image_width = 0;
+            for (int index = 0; index < active.length; index++) {
+                if (active[index] > 0 && InlineImageFormat.parse (
+                    tokens.get (index), out image_id, out image_width
+                )) {
+                    break;
+                }
+                image_id = "";
+            }
+            var source = image_id != "" && embedded_images != null ?
+                embedded_images.get (image_id) : null;
+            if (end == start + 1 && segment == InlineImageFormat.PLACEHOLDER &&
+                source != null && valid_embedded_image (source)) {
+                output.append_printf (
+                    "<img src=\"%s\" alt=\"Image attachment\" width=\"%d\">",
+                    source, image_width
+                );
+            } else {
+                output.append (GLib.Markup.escape_text (
+                    segment.replace (InlineImageFormat.PLACEHOLDER, "[Image attachment]")
+                ));
+            }
         }
 
-        /** Closes all currently active tags in reverse nesting order. */
-        private static void close_active (GLib.StringBuilder output, int[] active) {
+        /** Accepts only bounded raster image data URLs, never arbitrary HTML attributes. */
+        private static bool valid_embedded_image (string source) {
+            bool supported = source.has_prefix ("data:image/png;base64,") ||
+                source.has_prefix ("data:image/jpeg;base64,") ||
+                source.has_prefix ("data:image/gif;base64,") ||
+                source.has_prefix ("data:image/webp;base64,");
+            if (!supported || source.length > 1500000) {
+                return false;
+            }
+            int comma = source.index_of_char (',');
+            if (comma < 0 || comma + 1 >= source.length) {
+                return false;
+            }
+            for (int index = comma + 1; index < source.length; index++) {
+                var symbol = source[index];
+                if (!((symbol >= 'A' && symbol <= 'Z') ||
+                    (symbol >= 'a' && symbol <= 'z') ||
+                    (symbol >= '0' && symbol <= '9') ||
+                    symbol == '+' || symbol == '/' || symbol == '=')) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /** Closes active tags in reverse order, preserving valid HTML nesting. */
+        private static void close_active (
+            GLib.StringBuilder output, int[] active, Gee.List<string> closing_tags
+        ) {
             for (int index = active.length - 1; index >= 0; index--) {
                 if (active[index] > 0) {
-                    output.append (close_tags[index]);
+                    output.append (closing_tags.get (index));
                 }
             }
         }
 
-        /** Reopens currently active tags in stable nesting order. */
-        private static void open_active (GLib.StringBuilder output, int[] active) {
+        /** Opens active tags in a deterministic order after each style transition. */
+        private static void open_active (
+            GLib.StringBuilder output, int[] active, Gee.List<string> opening_tags
+        ) {
             for (int index = 0; index < active.length; index++) {
                 if (active[index] > 0) {
-                    output.append (open_tags[index]);
+                    output.append (opening_tags.get (index));
                 }
             }
         }

@@ -202,3 +202,27 @@ foreach case_name : [
     suite: 'integration',
   )
 endforeach
+
+stage9_completion_unit_executable = executable(
+  'test-stage9-2',
+  [core_sources, files('unit/test-stage9-2.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 9.2 rich clipboard and search ordering', stage9_completion_unit_executable, suite: 'unit')
+
+test(
+  'Stage 9.2 XDG data-directory compatibility',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage9_2_xdg.py'],
+  suite: 'integration',
+)
+
+test(
+  'Stage 9.2 opt-in background folder synchronization',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage9_2_auto_sync.py'],
+  suite: 'integration',
+)

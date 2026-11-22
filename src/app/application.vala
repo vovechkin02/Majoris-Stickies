@@ -233,8 +233,13 @@ namespace Stickies {
             }
         }
 
-        /** Copies both plain text and safe HTML without exporting private file paths. */
+        /** Prepares rich clipboard content without synchronously reading image files. */
         public void copy_note (string id) {
+            copy_note_async.begin (id);
+        }
+
+        /** Copies bounded inline raster images and safe text/html alternatives. */
+        private async void copy_note_async (string id) {
             var store = repository;
             if (store == null) {
                 return;
@@ -244,10 +249,18 @@ namespace Stickies {
                 report_operation_error ("Cannot copy note", "The note no longer exists");
                 return;
             }
+            int64 revision = note.updated_at_us;
             try {
                 var attachments = store.list_attachments (id);
+                var images = yield NoteTransfer.load_embeddable_images_async (attachments);
+                if (store.find_note (id) != note || note.updated_at_us != revision) {
+                    report_operation_error (
+                        "Could not copy note", "The note changed while copying; try again"
+                    );
+                    return;
+                }
                 var plain = NoteTransfer.to_plain_text (note, attachments);
-                var html = NoteTransfer.to_html (note, attachments);
+                var html = NoteTransfer.to_html (note, attachments, images);
                 var plain_provider = new Gdk.ContentProvider.for_bytes (
                     "text/plain;charset=utf-8", new GLib.Bytes ((uint8[]) plain.data)
                 );
@@ -262,7 +275,7 @@ namespace Stickies {
                     throw new IOError.FAILED ("The desktop clipboard is unavailable");
                 }
                 if (manager_window != null) {
-                    manager_window.show_message ("Copied note text and formatting");
+                    manager_window.show_message ("Copied note text and supported inline images");
                 }
             } catch (Error error) {
                 report_operation_error ("Could not copy note", error.message);

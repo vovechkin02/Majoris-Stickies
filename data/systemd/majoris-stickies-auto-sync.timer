@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodically synchronize an opt-in local Majoris Stickies folder
+
+[Timer]
+OnBootSec=15min
+OnUnitInactiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

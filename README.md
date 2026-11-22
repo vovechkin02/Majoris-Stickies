@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.1 (Stage 9.1 interoperability and reliability update; native release gate pending)  
+**Version:** 0.9.2 (remaining-interoperability update; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,54 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.2 — Interoperability and local automation
+
+- **Rich clipboard and HTML export:** HTML now preserves installed-font, point-size, RGB foreground,
+  alignment, and list style tokens. HTML-unsafe font characters are encoded as
+  CSS escapes. User-entered text is HTML-escaped and managed filesystem paths
+  are never exposed. Copy Note can embed up to eight managed PNG/JPEG/GIF/WebP
+  images, each at most 1 MiB and checked for its expected image signature. The
+  image bytes are prepared asynchronously in a shared transfer helper for
+  both Copy Note and HTML export; unsupported or oversized media remain
+  descriptive placeholders. **Majoris Image** continues to own image
+  rendering inside Stickies; clipboard copying does not implement a decoder.
+- **XDG directories:** Backup, exchange, and background reminder tools follow
+  absolute `XDG_DATA_HOME`, with the standard `~/.local/share` fallback. Explicit
+  `--data-dir` choices remain supported. An invalid relative XDG setting is
+  ignored rather than redirecting storage to the current directory.
+- **Reminders:** Note options include 10-minute and one-hour snooze actions for
+  existing reminders. This reschedules the existing one-shot reminder rather
+  than introducing a second scheduling system.
+- **Search:** Only matched notes are sorted, avoiding an unnecessary full
+  collection sort for selective searches. The pinned/recent ordering stays the
+  same; SQLite FTS and database pagination remain future scalability work.
+- **Optional scheduled local sync:** A disabled-by-default systemd user timer
+  can invoke the existing conflict-preserving exchange tool every 15 minutes.
+  It requires explicit configuration, an inactive Stickies session, and an
+  available user D-Bus connection. Automatic deletion propagation is disabled;
+  cloud-account sync is **not** implemented.
+
+To opt in to scheduled synchronization of an existing local or mounted share:
+
+```sh
+majoris-stickies-auto-sync configure /absolute/path/to/shared-folder
+majoris-stickies-auto-sync once --dry-run
+systemctl --user daemon-reload
+systemctl --user enable --now majoris-stickies-auto-sync.timer
+```
+
+To disable the timer:
+
+```sh
+systemctl --user disable --now majoris-stickies-auto-sync.timer
+```
+
+The worker skips its run while Stickies is open. Each device must use a distinct
+local data store and the same shared folder; the exchange tool's receipt and
+conflict protections remain active. The original manual `sync` workflow is
+unchanged. See [`docs/stage-9-2-qualification.md`](docs/stage-9-2-qualification.md)
+for limitations and native test requirements.
 
 ## Stage 9.1 remaining-functional-gaps pass (v0.9.1)
 

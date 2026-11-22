@@ -195,16 +195,7 @@ namespace Stickies {
                 result.add (note);
             }
 
-            result.sort ((left, right) => {
-                if (left.is_pinned != right.is_pinned) {
-                    return left.is_pinned ? -1 : 1;
-                }
-                if (left.updated_at_us == right.updated_at_us) {
-                    return left.id.collate (right.id);
-                }
-
-                return left.updated_at_us > right.updated_at_us ? -1 : 1;
-            });
+            result.sort ((left, right) => compare_recent_notes (left, right));
             return result;
         }
 
@@ -212,7 +203,7 @@ namespace Stickies {
         public Gee.ArrayList<Note> search_notes (string query) {
             var result = new Gee.ArrayList<Note> ();
             var needle = query.strip ().casefold ();
-            foreach (var note in list_notes ()) {
+            foreach (var note in notes.values) {
                 if (needle == "" ||
                     note.title.casefold ().index_of (needle) >= 0 ||
                     note.content.casefold ().index_of (needle) >= 0 ||
@@ -221,7 +212,19 @@ namespace Stickies {
                 }
             }
 
+            result.sort ((left, right) => compare_recent_notes (left, right));
             return result;
+        }
+
+        /** Applies the same pinned/recent ordering to searches and full note lists. */
+        private static int compare_recent_notes (Note left, Note right) {
+            if (left.is_pinned != right.is_pinned) {
+                return left.is_pinned ? -1 : 1;
+            }
+            if (left.updated_at_us == right.updated_at_us) {
+                return left.id.collate (right.id);
+            }
+            return left.updated_at_us > right.updated_at_us ? -1 : 1;
         }
 
         /** Changes the lifecycle state, retaining the note and its attachments. */

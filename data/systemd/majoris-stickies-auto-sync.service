@@ -1,0 +1,6 @@
+[Unit]
+Description=Synchronize local Majoris Stickies folder when the app is closed
+
+[Service]
+Type=oneshot
+ExecStart=majoris-stickies-auto-sync once

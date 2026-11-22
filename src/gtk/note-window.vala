@@ -261,6 +261,14 @@ namespace Stickies {
                 popover.popdown ();
                 choose_reminder ();
             });
+            menu_item (menu, "Snooze Reminder — 10 Minutes", () => {
+                popover.popdown ();
+                snooze_reminder (10);
+            });
+            menu_item (menu, "Snooze Reminder — 1 Hour", () => {
+                popover.popdown ();
+                snooze_reminder (60);
+            });
             menu_item (menu, "Edit Source URL…", () => {
                 popover.popdown ();
                 edit_source_url ();
@@ -613,6 +621,21 @@ namespace Stickies {
             dialog.add_response ("close", "Close");
             dialog.set_close_response ("close");
             dialog.present (this);
+        }
+
+        /** Reschedules an existing reminder without changing note text or attachments. */
+        private void snooze_reminder (int minutes) {
+            if (note.remind_at_us <= 0) {
+                show_status ("Set a reminder before snoozing it");
+                return;
+            }
+            int64 deadline_us = GLib.get_real_time () + (int64) minutes * 60 * 1000000;
+            try {
+                repository.set_reminder (note.id, deadline_us);
+                save_label.label = "Reminder snoozed for %d minutes".printf (minutes);
+            } catch (Error error) {
+                show_save_failure ("Could not snooze reminder: " + error.message);
+            }
         }
 
         /** Parses one local wall-clock deadline without accepting partial dates or past times. */
@@ -985,7 +1008,15 @@ namespace Stickies {
         private async void export_html_async (GLib.File file) {
             try {
                 var attachments = repository.list_attachments (note.id);
-                var html = NoteTransfer.to_html (note, attachments);
+                int64 note_revision = note.updated_at_us;
+                var images = yield NoteTransfer.load_embeddable_images_async (
+                    attachments, attachment_cancellable
+                );
+                if (note.updated_at_us != note_revision) {
+                    show_status ("HTML export canceled: note changed while preparing media");
+                    return;
+                }
+                var html = NoteTransfer.to_html (note, attachments, images);
                 string? etag;
                 yield file.replace_contents_async (
                     html.data, null, false,

@@ -32,7 +32,16 @@ MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_LAYOUT_BYTES = 131072
 CHUNK_BYTES = 1024 * 1024
 ATTACHMENT_NAME = re.compile(r"attachments/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.asset\Z")
-DEFAULT_DATA_DIR = Path.home() / ".local/share/majoris/stickies"
+def default_data_dir() -> Path:
+    """Use an absolute XDG_DATA_HOME, falling back to the GLib default."""
+    location = os.environ.get("XDG_DATA_HOME", "")
+    base = Path(location) if location else Path.home() / ".local/share"
+    if not base.is_absolute():
+        base = Path.home() / ".local/share"
+    return base / "majoris" / "stickies"
+
+
+DEFAULT_DATA_DIR = default_data_dir()
 
 
 class BackupError(Exception):

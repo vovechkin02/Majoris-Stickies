@@ -38,7 +38,16 @@ SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 INLINE_IMAGE = re.compile(r"image_([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})_([0-9]{2,4})\Z")
 RGB_STYLE = re.compile(r"rgb_[0-9a-f]{6}\Z")
 POINT_STYLE = re.compile(r"point_([0-9]|[1-9][0-9])\Z")
-DATA_DIR = Path.home() / ".local/share/majoris/stickies"
+def default_data_dir() -> Path:
+    """Use an absolute XDG_DATA_HOME, falling back to the GLib default."""
+    location = os.environ.get("XDG_DATA_HOME", "")
+    base = Path(location) if location else Path.home() / ".local/share"
+    if not base.is_absolute():
+        base = Path.home() / ".local/share"
+    return base / "majoris" / "stickies"
+
+
+DATA_DIR = default_data_dir()
 NOTE_COLUMNS = (
     "id", "title", "content", "color", "created_at_us", "updated_at_us",
     "formatting", "collapsed", "floating", "translucent", "window_width",

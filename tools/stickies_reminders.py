@@ -19,7 +19,16 @@ import sys
 import time
 from typing import Callable
 
-DATA_DIR = Path.home() / ".local/share/majoris/stickies"
+def default_data_dir() -> Path:
+    """Use an absolute XDG_DATA_HOME, falling back to the GLib default."""
+    location = os.environ.get("XDG_DATA_HOME", "")
+    base = Path(location) if location else Path.home() / ".local/share"
+    if not base.is_absolute():
+        base = Path.home() / ".local/share"
+    return base / "majoris" / "stickies"
+
+
+DATA_DIR = default_data_dir()
 MAX_DUE_PER_RUN = 30
 MAX_DATABASE_BYTES = 1024 * 1024 * 1024
 

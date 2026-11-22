@@ -1,3 +1,16 @@
+majoris-stickies (0.9.2-1) unstable; urgency=medium
+
+  * Preserve dynamic font, color, size, and list styles in safe HTML clipboard output.
+  * Copy or export up to eight verified inline raster images as HTML data URIs.
+  * Use XDG_DATA_HOME for backup, exchange, and background reminder utilities.
+  * Add optional, disabled-by-default scheduled local-folder synchronization.
+  * Add explicit 10-minute and 1-hour reminder snooze actions.
+  * Sort matched notes only, preserving the existing pinned/recent order.
+  * Preserve SQLite schema v5 and all stored notes, attachments, and share formats.
+  * Native compilation and Debian/GNOME qualification remain outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Sun, 22 Nov 2026 20:19:00 +1100
+
 majoris-stickies (0.9.1-1) unstable; urgency=medium
 
   * Preserve dynamic rich text and remapped inline images in portable shares.

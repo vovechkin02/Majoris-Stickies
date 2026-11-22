@@ -2,7 +2,7 @@ project(
   'majoris-stickies',
   'vala',
   'c',
-  version: '0.9.1',
+  version: '0.9.2',
   meson_version: '>=1.0.0',
   default_options: ['warning_level=2'],
 )
@@ -72,6 +72,13 @@ install_data(
 )
 
 install_data(
+  'tools/stickies_auto_sync.py',
+  install_dir: get_option('bindir'),
+  rename: 'majoris-stickies-auto-sync',
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
   'tools/stickies_pdf_preview.py',
   install_dir: get_option('bindir'),
   rename: 'majoris-stickies-pdf-preview',
@@ -79,7 +86,7 @@ install_data(
 )
 
 summary({
-  'Stage': '9.1 interoperability and reliability — native qualification pending',
+  'Stage': '9.2 interoperability and optional local sync — native qualification pending',
   'ImageKit': imagekit_dep.found(),
   'Shell extension installed': get_option('shell_extension'),
   'Storage': 'SQLite, local-first',

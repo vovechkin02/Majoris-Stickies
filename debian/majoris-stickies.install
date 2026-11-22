@@ -11,3 +11,6 @@ usr/bin/majoris-stickies-rtfd
 usr/bin/majoris-stickies-reminders
 usr/lib/systemd/user/majoris-stickies-reminders.service
 usr/lib/systemd/user/majoris-stickies-reminders.timer
+usr/bin/majoris-stickies-auto-sync
+usr/lib/systemd/user/majoris-stickies-auto-sync.service
+usr/lib/systemd/user/majoris-stickies-auto-sync.timer

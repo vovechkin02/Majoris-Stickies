@@ -28,3 +28,10 @@ install_data(
   'systemd/majoris-stickies-reminders.timer',
   install_dir: get_option('prefix') / 'lib/systemd/user',
 )
+
+# Disabled by default: the user must choose and configure a local share folder.
+install_data(
+  'systemd/majoris-stickies-auto-sync.service',
+  'systemd/majoris-stickies-auto-sync.timer',
+  install_dir: get_option('prefix') / 'lib/systemd/user',
+)

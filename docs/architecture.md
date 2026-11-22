@@ -431,3 +431,33 @@ behavior must be checked on the shipping Majoris system.
   idiom. No new GoF participant hierarchy was introduced solely for this pass.
 - Native build, runtime ownership, and compositor behavior still require the
   release qualification described in `docs/stage-9-completion.md`.
+
+## Stage 9.2 HTML transfer, user directories, and local sync
+
+`NoteTransfer` continues to own deterministic Unicode-span-to-HTML encoding.
+New dynamic text tokens are resolved through the established `TextStyleFormat`
+validator; font names are escaped at the CSS boundary, not concatenated as
+arbitrary CSS. The optional image-data map contains at most eight base64
+raster images, accepted only through a bounded and validated `data:image/*`
+URI, and its keys are attachment UUIDs rather than paths. `NoteTransfer`
+performs asynchronous managed-file reads for both the clipboard and HTML
+export, allowing `StickiesApp` to remain an orchestration layer. It validates the stored MIME and file signature; it does **not**
+decode images. ImageKit remains the only application image rendering layer.
+
+The backup, exchange, and reminder utilities derive their defaults from an
+absolute XDG_DATA_HOME and retain explicit override arguments. No schema
+migration, API rename, or attachment layout change was introduced.
+
+The optional `stickies_auto_sync.py` is a narrowly scoped process adapter
+around the already-existing exchange CLI. The user-level timer owns the
+schedule; the worker owns its private configuration and must verify session
+bus ownership before invoking exchange with `--app-closed`. Automatic deletion
+propagation is intentionally excluded. This is not the GoF Command or State
+pattern; all storage and conflict policy remains in the existing exchange
+layer. Its setup CLI is explicit opt-in, not a startup side effect.
+
+`NoteRepository.search_notes()` filters before sorting and delegates
+comparison to the same ordering function as `list_notes()`, preserving pinned
+and last-edited priority. The editor remains local-first and its single
+source of truth is unchanged. Native Vala/GTK compilation and GNOME Wayland
+qualification are still release gates.
