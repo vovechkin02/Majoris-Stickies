@@ -75,3 +75,19 @@ test(
   args: [meson.project_source_root() / 'tools/check_source_docs.py'],
   suite: 'integration',
 )
+
+stage5_unit_executable = executable(
+  'test-stage5',
+  [core_sources, files('unit/test-stage5.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 5 reminders and v4 migration', stage5_unit_executable, suite: 'unit')
+
+test(
+  'Optional note share and folder synchronization',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage5_exchange.py'],
+  suite: 'integration',
+)

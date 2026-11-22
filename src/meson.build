@@ -9,6 +9,7 @@ core_sources = files(
 )
 
 gtk_sources = files(
+  'gtk/ink-canvas.vala',
   'gtk/manager-window.vala',
   'gtk/note-window.vala',
   'gtk/rich-text-codec.vala',

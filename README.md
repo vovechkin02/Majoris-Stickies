@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.4.0 (Stage 4 source implementation)  
+**Version:** 0.5.0 (Stage 5 source implementation)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -48,7 +48,7 @@ Stage 2 adds:
 - **Import/export:** asynchronous UTF-8 plain-text import (up to 2 MiB) and
   plain-text export through native file dialogs. Plain-text export does not
   retain rich-text styles or attachments; a lossless note archive format and
-  RTF/RTFD interchange are not yet implemented.
+  RTF/RTFD interchange was not implemented in Stage 2.
 - **Desktop-note preferences:** collapsible note paper, translucent paper,
   last open/closed status, and last noncollapsed window dimensions.
 - **Optional GNOME Shell extension:** verified-note always-on-top and
@@ -95,12 +95,38 @@ Stage 4 adds:
   arranges notes separately on each monitor.
 - **Packaging:** Meson installation for the recovery tool and Debian package
   recipes for the application and optional Shell extension. The schema stays
-  at v3; no data migration is needed from Stage 3.
+  at v3 during Stage 4; Stage 5 adds a new migration.
+
+Stage 5 adds:
+
+- **Reminders:** One-shot per-note reminders for 10 minutes, one hour, or
+  tomorrow at 9:00 AM; cancel/reset; persisted `remind_at_us` and notification
+  delivery markers; local desktop notifications are polled while Stickies runs.
+  Reminders do **not** run when the application is closed, and there are no
+  always-on background jobs or network requirements.
+- **Handwriting:** Draw with pointer, pen, or touch drag gestures on a bounded
+  640×360 canvas, clear strokes, and attach the drawing as inert vector SVG.
+  No pressure-sensitive brush simulation or OCR is implemented. Majoris Image
+  remains the existing attachment preview provider when installed.
+- **Sharing:** Save safe formatted HTML from a note window, or create a
+  `.stickies` ZIP bundle containing precisely one note and its managed files.
+  Share bundles carry SHA-256 integrity metadata and reject extra archive paths.
+  The note menu runs the separately packaged exchange helper asynchronously.
+- **Optional folder synchronization:** `majoris-stickies-exchange sync` exchanges
+  portable note bundles through a **user-chosen local directory**, including a
+  directory synchronized by another program. It requires Stickies closed and
+  explicit `--app-closed` confirmation; conflicting edits produce independent
+  note copies. No account, automatic cloud upload, server, polling, or background
+  synchronization is installed. Shared folder files are **not encrypted**.
+- **Database migration:** The Stage 4 v3 database is upgraded transactionally
+  to schema v4, adding reminder deadline and delivery columns. The existing
+  note IDs, formatting, attachments, source URLs, and desktop-window state remain.
 
 **Not yet implemented:** RTF/RTFD import/export, arbitrary font selection,
 full font-size controls, numbered/bulleted lists, inline PDF page rendering,
 true transparent toplevel windows, multi-monitor placement qualification,
-external account syncing, automatic browser URL extraction, reminders, or Trash/Archive. The
+provider-managed account syncing, automatic browser URL extraction,
+background reminders, or Trash/Archive. The
 translucency toggle changes the paper's opacity, not compositor-wide window
 alpha. Note deletion remains permanent.
 
@@ -110,7 +136,7 @@ alpha. Note deletion remains permanent.
 | --- | --- |
 | Debian 13 / GNOME | Target platform; native runtime not yet qualified |
 | GTK4 / libadwaita | Declarative GTK4 GUI, majoris-themed note paper |
-| SQLite | Local data; schema v3 with transactional migrations |
+| SQLite | Local data; schema v4 with transactional migrations |
 | [Majoris Image](https://github.com/vovechkin02/Majoris-Image) | Optional GTK4 dependency; image file previews only |
 | GNOME Shell | Optional extension; targeted at Shell 48–50, unverified in compositor |
 | Internet / account | Not required |
@@ -192,6 +218,55 @@ Color. Always on Top and arrangements require the optional extension. If it
 is unavailable, the application reports the error and does not persist a
 false successful floating state.
 
+### Stage 5 sharing and optional synchronization
+
+In a note's **More** menu, choose **Set Reminder**, **Draw with Pen**,
+**Export Formatted HTML**, or **Share Note with Attachments**. HTML is a text
+export and does not embed private attachment bytes. The `.stickies` bundle
+includes one note's attachments; inspect its contents before sending it to
+anyone. Avoid storing shared bundles in public locations.
+
+To list IDs and share one note from the terminal:
+
+```sh
+majoris-stickies-exchange list
+majoris-stickies-exchange share NOTE_UUID /path/to/new-note.stickies
+```
+
+To exchange notes between machines, first arrange for both devices to access
+one shared folder, for example via a trusted file-sharing service. **Close
+Stickies before running the command on each device:**
+
+```sh
+majoris-stickies-exchange sync /path/to/shared-folder --app-closed
+```
+
+To receive a shared note without configuring a synchronization folder,
+close Stickies and run:
+
+```sh
+majoris-stickies-exchange import /path/to/shared-note.stickies --app-closed
+```
+
+If its ID already exists with different content, the import keeps the original
+and creates a separate conflict copy. Otherwise the note is added and will
+appear when Stickies next opens.
+
+The first folder-sync run publishes existing notes or imports remote notes. Repeat on the
+other device after edits. If both sides changed a note, the tool preserves the
+local edit as a separate **Conflict copy** and receives the remote revision.
+A `.stickies-sync.lock` file guards simultaneous local commands, but is not
+an inter-machine cloud lock: do not synchronize both devices concurrently.
+**Deletions are deliberately not propagated**; deleted notes may reappear
+when an old bundle is still shared. Delete bundles manually when all devices
+agree. Synchronization does not automatically begin when Stickies starts,
+does not use a Microsoft/Apple account, and does not encrypt the shared files.
+
+Before the first sync or import, run `majoris-stickies-backup create` and keep a
+verified copy offline. `sync-state.json` stores last-agreed revision hashes in
+the local note directory; it contains no full note contents. Use each device's
+own data directory, not a shared SQLite database.
+
 ## Data and compatibility
 
 - SQLite database: `$XDG_DATA_HOME/majoris/stickies/notes.db`, defaulting to
@@ -200,7 +275,7 @@ false successful floating state.
   filenames and original display names in SQLite.
 - Shell-managed positions: `window-positions.json` in the same data directory,
   written only by the optional extension.
-- The schema uses `PRAGMA user_version=3` and upgrades Stage 1 and Stage 2 schemas
+- The schema uses `PRAGMA user_version=4` and upgrades Stage 1–4 schemas.
   in-place, preserving note IDs and existing content. Databases from newer
   versions are rejected rather than overwritten.
 - The installed `majoris-stickies-backup` command creates a consistent
@@ -275,13 +350,15 @@ python3 tests/integration/test_resource_layout.py data
 node --check shell/majoris-stickies@majoris.org/extension.js
 node --experimental-default-type=module tests/integration/test_layout.mjs
 python3 -m unittest discover -s tests/recovery -p 'test_*.py'
+python3 -m unittest discover -s tests/integration -p 'test_stage5_exchange.py'
 python3 tools/check_source_docs.py
 ```
 
 Vala unit tests cover Stage 1 CRUD/search, Stage 2 formatting and migrations,
 Stage 3 source URL validation, persistence, search and clipboard export, and
-Stage 4 database integrity and large-collection behavior. Python tests verify
-UI resources, accessibility annotations, and seven backup/recovery cases. A
+Stage 4 database integrity and large-collection behavior, and Stage 5 reminder
+and schema upgrades. Python tests verify
+UI resources, accessibility annotations, and eight backup/recovery cases, plus nine exchange tests. A
 separate pure-JavaScript suite checks multi-monitor placement geometry.
 
 **For this archive:** resource XML, backup/restore and shell layout tests
@@ -291,7 +368,7 @@ been run**: this environment has no Vala/GTK/libadwaita build toolchain.
 Static checks do not establish native compilation or runtime correctness.
 
 Further details and required target-machine checks are recorded in
-[Stage 4 qualification](docs/stage-4-qualification.md). Do not label this
+[Stage 5 qualification](docs/stage-5-qualification.md). Do not label this
 source release as compiled, runtime-qualified or complete macOS parity.
 
 ## Contributing and license
@@ -304,6 +381,6 @@ GPL-3.0-or-later; see [LICENSE](LICENSE). Original source is distributed,
 without bundling third-party binaries, image assets or Majoris Image itself.
 
 Stage-specific changes and required acceptance checks are recorded in
-[Stage 4 qualification](docs/stage-4-qualification.md). Earlier Stage 3
+[Stage 5 qualification](docs/stage-5-qualification.md). Earlier Stage 3
 screenshots and clipboard behavior remain documented in
 [Stage 3 qualification](docs/stage-3-qualification.md).

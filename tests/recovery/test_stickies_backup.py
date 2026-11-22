@@ -95,6 +95,31 @@ class RecoveryTests(unittest.TestCase):
             -1200,
         )
 
+    def test_stage5_reminder_backup_roundtrip(self) -> None:
+        """Preserve v4 reminder values and assets through verified recovery."""
+        self.connection.executescript(
+            "ALTER TABLE notes ADD COLUMN remind_at_us INTEGER NOT NULL DEFAULT 0;"
+            "ALTER TABLE notes ADD COLUMN reminder_notified_at_us INTEGER NOT NULL DEFAULT 0;"
+            "PRAGMA user_version=4;"
+        )
+        self.connection.execute(
+            "UPDATE notes SET remind_at_us=?,reminder_notified_at_us=? WHERE id=?",
+            (1_800_000_000_000_000, 0, NOTE_ID),
+        )
+        self.connection.commit()
+        create_backup(self.data_dir, self.archive_path)
+        verify_backup(self.archive_path)
+        target = self.root / "stage5-restored"
+        restore_backup(self.archive_path, target)
+        with sqlite3.connect(target / "notes.db") as database:
+            self.assertEqual(database.execute("PRAGMA user_version").fetchone(), (4,))
+            self.assertEqual(
+                database.execute("SELECT remind_at_us FROM notes").fetchone(),
+                (1_800_000_000_000_000,),
+            )
+        self.assertEqual((target / "attachments" / f"{ASSET_ID}.asset").read_bytes(),
+                         b"image-bytes")
+
     def test_backup_existing_stage1_database(self) -> None:
         """Preserve pre-migration Stage 1 notes without requiring a Stage 4 app launch."""
         self.connection.close()

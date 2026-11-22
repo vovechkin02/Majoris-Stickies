@@ -13,6 +13,7 @@ namespace Stickies {
         private bool windows_restored = false;
         private ShellWindowBridge shell_bridge;
         private ScreenshotPortal screenshot_portal;
+        private uint reminder_poll_id = 0;
 
         /** Initializes the single-instance desktop application and its window registry. */
         public StickiesApp () {
@@ -87,6 +88,13 @@ namespace Stickies {
             }
 
             show_manager ();
+            if (reminder_poll_id == 0) {
+                reminder_poll_id = GLib.Timeout.add_seconds (30, () => {
+                    deliver_due_reminders ();
+                    return GLib.Source.CONTINUE;
+                });
+                deliver_due_reminders ();
+            }
             if (!windows_restored) {
                 windows_restored = true;
                 var store = repository;
@@ -100,8 +108,35 @@ namespace Stickies {
             }
         }
 
+        /** Publishes due one-shot reminders while the application is running. */
+        private void deliver_due_reminders () {
+            var store = repository;
+            if (store == null) {
+                return;
+            }
+            int64 now_us = GLib.get_real_time ();
+            foreach (var note in store.list_notes ()) {
+                if (note.remind_at_us == 0 || note.reminder_notified_at_us != 0 ||
+                    note.remind_at_us > now_us) {
+                    continue;
+                }
+                try {
+                    store.mark_reminder_notified (note.id, now_us);
+                    var notification = new GLib.Notification (note.title);
+                    notification.set_body ("Stickies reminder");
+                    send_notification (note.id, notification);
+                } catch (Error error) {
+                    warning ("Unable to deliver reminder for %s: %s", note.id, error.message);
+                }
+            }
+        }
+
         /** Flushes any pending saves as a final lifecycle safety net. */
         protected override void shutdown () {
+            if (reminder_poll_id != 0) {
+                GLib.Source.remove (reminder_poll_id);
+                reminder_poll_id = 0;
+            }
             var store = repository;
             if (store != null) {
                 try {

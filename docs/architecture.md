@@ -204,3 +204,46 @@ utility; it is not a second runtime repository provider.
 large-window runtime measurements and Mutter multi-monitor behavior must be
 executed in the Debian 13 / Majoris GNOME environment. See
 `docs/stage-4-qualification.md`.
+
+## Stage 5: optional exchange, ink, reminders, and sharing (0.5.0)
+
+- `Note` and `NoteRepository` own deadline/delivery-marker state. An additive,
+  transactional SQLite v3→v4 migration introduces `remind_at_us` and
+  `reminder_notified_at_us` without changing user or attachment identities.
+  `StickiesApp` polls due notes at 30-second intervals only when running;
+  markers are saved before `GApplication.send_notification()` is called.
+  Notifications are one-shot, best-effort desktop messages, **not** a
+  persistent system alarm service or off-process background agent. The
+  application does not initiate network traffic to schedule reminders.
+- `InkCanvas` owns bounded in-memory strokes captured by `Gtk.GestureDrag`,
+  with a fixed-size Cairo preview and a numeric-path-only SVG exporter.
+  The drawing editor delegates attachment persistence to
+  `NoteRepository.attach_file()`. No new image decoder or SVG rendering path
+  is introduced; previews remain delegated to Majoris Image when available.
+- `NoteTransfer` still owns clipboard/HTML escaping. `NoteWindow` adds
+  asynchronous HTML export and launches a separate, opt-in
+  `majoris-stickies-exchange` process to create one-note `.stickies` bundles.
+  The Python share/import/exchange command uses SQLite snapshots, checks ZIP members,
+  validates SHA-256 attachments, and does not include unrelated notes.
+- The opt-in Python folder sync service owns the shared-file protocol. It uses
+  deterministic, content-derived note revision hashes, independent of local
+  attachment UUIDs and window geometry. `sync-state.json` tracks last-agreed
+  revisions. When local and remote revisions both diverge, it creates a
+  separately identified conflict copy instead of discarding either edit.
+  A local advisory file lock prevents concurrent processes on the same machine.
+  This is a **manual, app-closed, folder-based exchange**, not an always-on
+  cloud provider integration. No remote deletion propagation or encryption is
+  promised.
+
+**GoF evaluation:** `NoteRepository` remains the domain-level persistence
+facade; native GObject signals are used for observations. The exchange tool
+is a separate offline protocol adapter, not a replacement for the runtime
+repository, and `InkCanvas` is a narrowly scoped presentation widget. Neither
+requires fabricated Strategy, Factory, Singleton or Command hierarchies.
+
+**Ownership and safety:** A note window cancels its pending file-dialog/export
+operations on close. Export helpers do not receive arbitrary shell commands or
+untrusted executable paths. Shared files are input data only, with bounded
+sizes and validated UUIDs. The user must explicitly close the application
+before any other process imports updates into the SQLite database. Developer
+native build and GNOME Shell runtime qualification remain outstanding.

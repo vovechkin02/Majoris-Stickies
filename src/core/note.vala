@@ -39,6 +39,12 @@ namespace Stickies {
         /** Whether the note window was open when Stickies last stopped. */
         public bool is_visible { get; private set; default = false; }
 
+        /** Reminder deadline in Unix microseconds, or zero when disabled. */
+        public int64 remind_at_us { get; private set; default = 0; }
+
+        /** Last successfully scheduled notification time for the current reminder. */
+        public int64 reminder_notified_at_us { get; private set; default = 0; }
+
         /** Validated paper-color token from NotePalette. */
         public string color { get; private set; }
 
@@ -66,7 +72,9 @@ namespace Stickies {
             int window_width = 370,
             int window_height = 330,
             bool is_visible = false,
-            string source_url = ""
+            string source_url = "",
+            int64 remind_at_us = 0,
+            int64 reminder_notified_at_us = 0
         ) {
             Object ();
             this.id = id;
@@ -82,6 +90,9 @@ namespace Stickies {
             this.window_width = window_width >= 240 && window_width <= 4000 ? window_width : 370;
             this.window_height = window_height >= 120 && window_height <= 4000 ? window_height : 330;
             this.is_visible = is_visible;
+            this.remind_at_us = remind_at_us > 0 ? remind_at_us : 0;
+            this.reminder_notified_at_us = this.remind_at_us > 0 &&
+                reminder_notified_at_us > 0 ? reminder_notified_at_us : 0;
             try {
                 this.source_url = SourceLink.normalize (source_url);
             } catch (Error error) {
@@ -98,6 +109,26 @@ namespace Stickies {
             }
             source_url = normalized;
             touch ();
+            return true;
+        }
+
+        /** Schedules a one-time reminder; zero clears it and its delivery marker. */
+        internal bool update_reminder (int64 deadline_us) {
+            if (deadline_us < 0 || remind_at_us == deadline_us) {
+                return false;
+            }
+            remind_at_us = deadline_us;
+            reminder_notified_at_us = 0;
+            return true;
+        }
+
+        /** Records delivery once, avoiding repeated reminders on every poll. */
+        internal bool mark_reminder_notified (int64 now_us) {
+            if (remind_at_us == 0 || reminder_notified_at_us != 0 ||
+                now_us < remind_at_us) {
+                return false;
+            }
+            reminder_notified_at_us = now_us;
             return true;
         }
 

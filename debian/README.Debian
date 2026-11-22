@@ -23,3 +23,8 @@ package installation and removal must not modify that directory.
 Before an OS image release, replace the example.invalid package maintainer
 address with the actual owning packaging contact and qualify binaries,
 AppStream metadata, the desktop launcher, shell ABI and the save/recovery flow.
+
+Stage 5 installs majoris-stickies-exchange for explicit single-note sharing and
+app-closed synchronization through a chosen folder. The shared files are
+unencrypted; do not configure a public cloud folder without user consent.
+Reminders require the application to be running; no system service is installed.

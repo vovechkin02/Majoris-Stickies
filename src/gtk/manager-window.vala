@@ -235,6 +235,17 @@ namespace Stickies {
                 content.append (origin);
             }
 
+            if (note.remind_at_us > 0 && note.reminder_notified_at_us == 0) {
+                var reminder_time = new GLib.DateTime.from_unix_local (
+                    note.remind_at_us / 1000000
+                );
+                var reminder_label = new Gtk.Label (
+                    "Reminder: " + (reminder_time.format ("%b %d, %H:%M") ?? "")
+                );
+                reminder_label.halign = Gtk.Align.START;
+                reminder_label.add_css_class ("dim-label");
+                content.append (reminder_label);
+            }
             var timestamp = new GLib.DateTime.from_unix_local (note.updated_at_us / 1000000);
             var modified_label = new Gtk.Label (timestamp.format ("%b %d, %H:%M") ?? "");
             modified_label.halign = Gtk.Align.START;

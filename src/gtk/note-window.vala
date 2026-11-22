@@ -199,6 +199,10 @@ namespace Stickies {
                 owner.copy_note (note.id);
                 popover.popdown ();
             });
+            menu_item (menu, "Set Reminder…", () => {
+                popover.popdown ();
+                choose_reminder ();
+            });
             menu_item (menu, "Edit Source URL…", () => {
                 popover.popdown ();
                 edit_source_url ();
@@ -208,6 +212,18 @@ namespace Stickies {
                 owner.capture_screenshot (note.id);
             });
             menu.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+            menu_item (menu, "Draw with Pen…", () => {
+                popover.popdown ();
+                open_ink_editor ();
+            });
+            menu_item (menu, "Export Formatted HTML…", () => {
+                popover.popdown ();
+                choose_html_export ();
+            });
+            menu_item (menu, "Share Note with Attachments…", () => {
+                popover.popdown ();
+                choose_share_bundle ();
+            });
             menu_item (menu, "Attach Image or PDF…", () => {
                 popover.popdown ();
                 choose_attachment ();
@@ -223,6 +239,49 @@ namespace Stickies {
             popover.set_child (menu);
             more_button.popover = popover;
             apply_presentation ();
+        }
+
+        /** Presents bounded reminder choices in the local time zone. */
+        private void choose_reminder () {
+            var options = new Gtk.Box (Gtk.Orientation.VERTICAL, 6);
+            var now = new GLib.DateTime.now_local ();
+            var ten_minutes = now.add_minutes (10);
+            var one_hour = now.add_hours (1);
+            var tomorrow = now.add_days (1);
+            var morning = new GLib.DateTime.local (
+                tomorrow.get_year (), tomorrow.get_month (), tomorrow.get_day_of_month (),
+                9, 0, 0.0
+            );
+            var dialog = new Adw.AlertDialog (
+                "Note Reminder", "Notifications appear while Stickies is running."
+            );
+            string[] labels = {
+                "In 10 Minutes", "In 1 Hour", "Tomorrow at 9:00 AM", "Clear Reminder"
+            };
+            int64[] deadlines = {
+                ten_minutes.to_unix () * 1000000,
+                one_hour.to_unix () * 1000000,
+                morning.to_unix () * 1000000,
+                0
+            };
+            for (int index = 0; index < labels.length; index++) {
+                int64 deadline = deadlines[index];
+                var button = new Gtk.Button.with_label (labels[index]);
+                button.clicked.connect (() => {
+                    try {
+                        repository.set_reminder (note.id, deadline);
+                        save_label.label = deadline == 0 ? "Reminder cleared" : "Reminder set";
+                        dialog.close ();
+                    } catch (Error error) {
+                        show_save_failure (error.message);
+                    }
+                });
+                options.append (button);
+            }
+            dialog.set_extra_child (options);
+            dialog.add_response ("close", "Close");
+            dialog.set_close_response ("close");
+            dialog.present (this);
         }
 
         /** Edits an explicit web origin; screenshots never fabricate a source URL. */
@@ -403,6 +462,164 @@ namespace Stickies {
                 note.id, note.is_collapsed, note.is_floating, !note.is_translucent,
                 note.window_width, note.window_height, true
             );
+        }
+
+        /** Opens a bounded pen canvas and saves a vector SVG as a normal attachment. */
+        private void open_ink_editor () {
+            var dialog = new Gtk.Window ();
+            dialog.title = "Draw on Note";
+            dialog.set_transient_for (this);
+            dialog.set_modal (true);
+            dialog.set_default_size (700, 440);
+            var layout = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+            layout.margin_top = 12;
+            layout.margin_bottom = 12;
+            layout.margin_start = 12;
+            layout.margin_end = 12;
+            var canvas = new InkCanvas ();
+            canvas.set_size_request (640, 360);
+            canvas.hexpand = true;
+            canvas.vexpand = true;
+            canvas.set_tooltip_text ("Draw with mouse, pen, or touch pointer");
+            layout.append (canvas);
+            var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            actions.halign = Gtk.Align.END;
+            var clear_button = new Gtk.Button.with_label ("Clear");
+            clear_button.clicked.connect (() => canvas.clear_ink ());
+            actions.append (clear_button);
+            var cancel_button = new Gtk.Button.with_label ("Cancel");
+            cancel_button.clicked.connect (() => dialog.close ());
+            actions.append (cancel_button);
+            var save_button = new Gtk.Button.with_label ("Attach Drawing");
+            save_button.add_css_class ("suggested-action");
+            save_button.clicked.connect (() => {
+                if (!canvas.has_ink ()) {
+                    return;
+                }
+                var svg = canvas.to_svg ();
+                dialog.close ();
+                attach_drawing_async.begin (svg);
+            });
+            actions.append (save_button);
+            layout.append (actions);
+            dialog.set_child (layout);
+            dialog.present ();
+        }
+
+        /** Writes a temporary private SVG and reuses managed attachment validation. */
+        private async void attach_drawing_async (string svg) {
+            var path = GLib.Path.build_filename (
+                GLib.Environment.get_tmp_dir (),
+                "stickies-ink-" + GLib.Uuid.string_random () + ".svg"
+            );
+            var file = GLib.File.new_for_path (path);
+            try {
+                string? etag;
+                yield file.replace_contents_async (
+                    svg.data, null, false, GLib.FileCreateFlags.PRIVATE,
+                    attachment_cancellable, out etag
+                );
+                yield repository.attach_file (note.id, file, attachment_cancellable);
+                save_label.label = "Drawing attached";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not attach drawing: " + error.message);
+            } finally {
+                try {
+                    file.delete (null);
+                } catch (IOError.NOT_FOUND error) {
+                    // A canceled creation did not leave a temporary drawing.
+                } catch (Error error) {
+                    warning ("Temporary ink cleanup failed: %s", error.message);
+                }
+            }
+        }
+
+        /** Asks where to save an HTML version of this note's formatted text. */
+        private void choose_html_export () {
+            var dialog = new Gtk.FileDialog ();
+            dialog.title = "Share as HTML";
+            dialog.initial_name = "note.html";
+            dialog.save.begin (this, attachment_cancellable, (object, result) => {
+                try {
+                    var file = dialog.save.end (result);
+                    export_html_async.begin (file);
+                } catch (IOError.CANCELLED error) {
+                    return;
+                } catch (Error error) {
+                    show_save_failure (error.message);
+                }
+            });
+        }
+
+        /** Shares sanitized formatting without exposing private attachment paths. */
+        private async void export_html_async (GLib.File file) {
+            try {
+                var attachments = repository.list_attachments (note.id);
+                var html = NoteTransfer.to_html (note, attachments);
+                string? etag;
+                yield file.replace_contents_async (
+                    html.data, null, false,
+                    GLib.FileCreateFlags.REPLACE_DESTINATION,
+                    attachment_cancellable, out etag
+                );
+                save_label.label = "HTML exported";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not share HTML: " + error.message);
+            }
+        }
+
+        /** Selects a portable single-note share bundle, including its attachments. */
+        private void choose_share_bundle () {
+            var dialog = new Gtk.FileDialog ();
+            dialog.title = "Share Note and Attachments";
+            dialog.initial_name = note.id + ".stickies";
+            dialog.save.begin (this, attachment_cancellable, (object, result) => {
+                try {
+                    var file = dialog.save.end (result);
+                    share_bundle_async.begin (file);
+                } catch (IOError.CANCELLED error) {
+                    return;
+                } catch (Error error) {
+                    show_save_failure (error.message);
+                }
+            });
+        }
+
+        /** Launches the opt-in, single-note exchange helper off the GTK thread. */
+        private async void share_bundle_async (GLib.File destination) {
+            var path = destination.get_path ();
+            if (path == null) {
+                show_save_failure ("Choose a local file to share the note");
+                return;
+            }
+            try {
+                repository.flush_note (note.id);
+                var directory = GLib.Path.build_filename (
+                    GLib.Environment.get_user_data_dir (), "majoris", "stickies"
+                );
+                string[] arguments = {
+                    "majoris-stickies-exchange", "--data-dir", directory,
+                    "share", note.id, path
+                };
+                var process = new GLib.Subprocess.newv (
+                    arguments, GLib.SubprocessFlags.NONE
+                );
+                yield process.wait_async (attachment_cancellable);
+                if (!process.get_successful ()) {
+                    throw new IOError.FAILED (
+                        "Unable to create a share bundle; destination must be a new file"
+                    );
+                }
+                save_label.label = "Share bundle created";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not share note: " + error.message);
+            }
         }
 
         /** Prompts for a local image/PDF to copy into private attachment storage. */
