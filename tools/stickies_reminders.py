@@ -80,7 +80,7 @@ def dispatch_due(
 ) -> int:
     """Submit due notes and persist acknowledgements only after successful dispatch.
 
-    Only active, unnotified reminders in SQLite schema 4 or 5 are considered.
+    Only active, unnotified reminders in SQLite schemas 4–6 are considered.
     The worker never creates or migrates a database. It yields to an existing
     application session, leaving that app as the sole reminder dispatcher.
     """
@@ -103,7 +103,7 @@ def dispatch_due(
     with closing(sqlite3.connect(uri, uri=True, timeout=1)) as connection:
         connection.execute("PRAGMA busy_timeout=1000")
         schema = connection.execute("PRAGMA user_version").fetchone()[0]
-        if schema not in (4, 5):
+        if schema not in (4, 5, 6):
             raise ReminderError("Unsupported notes schema; open Stickies to upgrade")
         status_filter = "AND status=0" if schema >= 5 else ""
         query = (

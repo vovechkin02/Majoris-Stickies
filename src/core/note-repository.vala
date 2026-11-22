@@ -76,7 +76,7 @@ namespace Stickies {
 
         /** Adds and durably creates a new blank note. */
         public Note create_note () throws Error {
-            return insert_note ("Untitled Note", "", NotePalette.DEFAULT_COLOR);
+            return insert_note ("Untitled Note", "", NotePalette.DEFAULT_COLOR, true);
         }
 
         /**
@@ -269,7 +269,27 @@ namespace Stickies {
         /** Updates a stored note's heading and schedules a debounced save. */
         public void set_title (string id, string value) {
             var note = find_note (id);
-            if (note != null && note.update_title (value)) {
+            if (note != null && note.update_title (value, false)) {
+                queue_save (note);
+            }
+        }
+
+        /** Updates a title from its body only while automatic title mode is enabled. */
+        public void set_derived_title (string id, string value) {
+            var note = find_note (id);
+            if (note != null && note.auto_title && note.update_title (value, true)) {
+                queue_save (note);
+            }
+        }
+
+        /** Selects first-line title mode and restores it without erasing a manual title. */
+        public void set_auto_title (string id, bool enabled) {
+            var note = find_note (id);
+            if (note == null) {
+                return;
+            }
+            var replacement = enabled ? NoteTitle.derive (note.content) : note.title;
+            if (note.update_title (replacement, enabled)) {
                 queue_save (note);
             }
         }
@@ -555,9 +575,15 @@ namespace Stickies {
         }
 
         /** Creates a new note with one durable INSERT before announcing it. */
-        private Note insert_note (string title, string content, string color) throws Error {
+        private Note insert_note (
+            string title,
+            string content,
+            string color,
+            bool auto_title = false
+        ) throws Error {
             var now_us = GLib.get_real_time ();
             var note = new Note (GLib.Uuid.string_random (), title, content, color, now_us, now_us);
+            note.set_initial_title_mode (auto_title);
             save_note (note);
             notes.set (note.id, note);
             note_added (note);
@@ -633,7 +659,7 @@ namespace Stickies {
         /** Migrates Stage 1 in-place and rejects unknown newer schemas. */
         private void initialize_schema () throws Error {
             int version = read_schema_version ();
-            if (version > 5) {
+            if (version > 6) {
                 throw new IOError.NOT_SUPPORTED (
                     "This notes database was created by a newer version of Stickies"
                 );
@@ -714,6 +740,25 @@ namespace Stickies {
                     throw error;
                 }
             }
+            if (version < 6) {
+                execute ("BEGIN IMMEDIATE");
+                try {
+                    execute (
+                        "ALTER TABLE notes ADD COLUMN auto_title INTEGER NOT NULL DEFAULT 0 " +
+                        "CHECK(auto_title IN (0,1))"
+                    );
+                    // Preserve all existing custom titles. Only the unambiguous
+                    // placeholder title is auto-managed after a legacy upgrade.
+                    execute (
+                        "UPDATE notes SET auto_title=1 WHERE title='Untitled Note'"
+                    );
+                    execute ("PRAGMA user_version=6");
+                    execute ("COMMIT");
+                } catch (Error error) {
+                    execute ("ROLLBACK");
+                    throw error;
+                }
+            }
         }
 
         /** Rejects corrupt or hostile identifiers before accessing private files. */
@@ -749,7 +794,7 @@ namespace Stickies {
                 "SELECT id, title, content, color, created_at_us, updated_at_us, " +
                 "formatting, collapsed, floating, translucent, " +
                 "window_width, window_height, visible, source_url, " +
-                "remind_at_us, reminder_notified_at_us, status, pinned FROM notes",
+                "remind_at_us, reminder_notified_at_us, status, pinned, auto_title FROM notes",
                 out statement
             );
 
@@ -773,7 +818,8 @@ namespace Stickies {
                     statement.column_int64 (14),
                     statement.column_int64 (15),
                     statement.column_int (16),
-                    statement.column_int (17) != 0
+                    statement.column_int (17) != 0,
+                    statement.column_int (18) != 0
                 );
                 notes.set (note.id, note);
             }
@@ -790,8 +836,8 @@ namespace Stickies {
                 "INSERT INTO notes " +
                 "(id, title, content, color, created_at_us, updated_at_us, " +
                 "formatting, collapsed, floating, translucent, window_width, window_height, visible, " +
-                "source_url,remind_at_us,reminder_notified_at_us,status,pinned) " +
-                "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18) " +
+                "source_url,remind_at_us,reminder_notified_at_us,status,pinned,auto_title) " +
+                "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19) " +
                 "ON CONFLICT(id) DO UPDATE SET " +
                 "title=excluded.title, content=excluded.content, " +
                 "color=excluded.color, updated_at_us=excluded.updated_at_us, " +
@@ -801,7 +847,8 @@ namespace Stickies {
                 "visible=excluded.visible, source_url=excluded.source_url, " +
                 "remind_at_us=excluded.remind_at_us, " +
                 "reminder_notified_at_us=excluded.reminder_notified_at_us, " +
-                "status=excluded.status, pinned=excluded.pinned",
+                "status=excluded.status, pinned=excluded.pinned, " +
+                "auto_title=excluded.auto_title",
                 out statement
             );
             check_bind (statement.bind_text (1, note.id));
@@ -822,6 +869,7 @@ namespace Stickies {
             check_bind (statement.bind_int64 (16, note.reminder_notified_at_us));
             check_bind (statement.bind_int (17, note.status));
             check_bind (statement.bind_int (18, note.is_pinned ? 1 : 0));
+            check_bind (statement.bind_int (19, note.auto_title ? 1 : 0));
             check_step (statement.step ());
         }
 

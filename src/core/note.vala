@@ -51,6 +51,9 @@ namespace Stickies {
         /** Whether this active note should appear above unpinned notes. */
         public bool is_pinned { get; private set; default = false; }
 
+        /** Whether edits to the first nonempty line should update the note title. */
+        public bool auto_title { get; private set; default = false; }
+
         /** Validated paper-color token from NotePalette. */
         public string color { get; private set; }
 
@@ -82,7 +85,8 @@ namespace Stickies {
             int64 remind_at_us = 0,
             int64 reminder_notified_at_us = 0,
             int status = 0,
-            bool is_pinned = false
+            bool is_pinned = false,
+            bool auto_title = false
         ) {
             Object ();
             this.id = id;
@@ -91,6 +95,7 @@ namespace Stickies {
             this.color = NotePalette.is_valid (color) ? color : NotePalette.DEFAULT_COLOR;
             this.status = status >= 0 && status <= 2 ? status : 0;
             this.is_pinned = is_pinned;
+            this.auto_title = auto_title;
             this.created_at_us = created_at_us;
             this.updated_at_us = updated_at_us;
             this.formatting = NoteFormatting.is_valid (content, formatting) ? formatting : "";
@@ -109,6 +114,11 @@ namespace Stickies {
                 warning ("Ignoring an invalid stored source URL: %s", error.message);
                 this.source_url = "";
             }
+        }
+
+        /** Sets the new note's title behavior before its first durable INSERT. */
+        internal void set_initial_title_mode (bool value) {
+            auto_title = value;
         }
 
         /** Moves a note through the active, archived, and Trash lifecycle. */
@@ -163,12 +173,13 @@ namespace Stickies {
         }
 
         /** Changes the heading, returning false when no actual edit occurred. */
-        internal bool update_title (string value) {
-            if (title == value) {
+        internal bool update_title (string value, bool automatic = false) {
+            if (title == value && auto_title == automatic) {
                 return false;
             }
 
             title = value;
+            auto_title = automatic;
             touch ();
             return true;
         }

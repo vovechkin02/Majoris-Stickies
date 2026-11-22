@@ -1,3 +1,15 @@
+majoris-stickies (0.9.5-1) unstable; urgency=medium
+
+  * Persist automatic versus manually edited note titles using schema v6.
+  * Migrate legacy records conservatively and preserve note identities and assets.
+  * Retain title mode in new portable bundles with v4/v5 bundle compatibility.
+  * Permit restoring first-line titles from the note options menu.
+  * Avoid rebuilding unrelated note cards for unchanged manager layouts.
+  * Add focused migration, interchange and recovery regression coverage.
+  * Native Vala, GNOME/GTK and Debian binary qualification remain outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 07:51:00 +1100
+
 majoris-stickies (0.9.4-1) unstable; urgency=medium
 
   * Add optional local spell checking through GtkSourceView 5 and libspelling.

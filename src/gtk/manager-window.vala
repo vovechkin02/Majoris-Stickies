@@ -42,6 +42,8 @@ namespace Stickies {
         private Gee.ArrayList<Note> visible_results;
         private int shown_card_count = 0;
         private int requested_card_count = CARD_PAGE_SIZE;
+        private string? pending_updated_note_id = null;
+        private bool can_refresh_one_card = false;
 
         /** Creates the manager and subscribes to note collection changes. */
         public ManagerWindow (StickiesApp owner, NoteRepository repository) {
@@ -57,6 +59,7 @@ namespace Stickies {
             create_arrangement_menu ();
             search_entry.search_changed.connect (() => {
                 requested_card_count = CARD_PAGE_SIZE;
+                can_refresh_one_card = false;
                 queue_refresh ();
             });
             repository.note_added.connect (on_note_changed);
@@ -171,13 +174,13 @@ namespace Stickies {
         /** Resets pagination when the view's selection changes. */
         private void reset_card_page () {
             requested_card_count = CARD_PAGE_SIZE;
+            can_refresh_one_card = false;
             queue_refresh ();
         }
 
         /** Rebuilds only the currently requested cards, not the entire collection. */
         private void refresh_cards () {
-            notes_flow.remove_all ();
-            shown_card_count = 0;
+            var previous_results = visible_results;
             visible_results = repository.search_notes (search_entry.text);
             int requested_status = status_filter.selected == 2 ? 1 :
                 (status_filter.selected == 3 ? 2 : 0);
@@ -212,6 +215,38 @@ namespace Stickies {
                 default:
                     break;
             }
+            // A text-only change that does not alter filtering or order can update
+            // just its card, preserving unrelated cards and their focus state.
+            if (can_refresh_one_card && pending_updated_note_id != null &&
+                previous_results.size == visible_results.size && shown_card_count > 0) {
+                bool same_order = true;
+                for (int index = 0; index < visible_results.size; index++) {
+                    if (previous_results[index].id != visible_results[index].id) {
+                        same_order = false;
+                        break;
+                    }
+                }
+                if (same_order) {
+                    for (int index = 0; index < shown_card_count; index++) {
+                        if (visible_results[index].id != pending_updated_note_id) {
+                            continue;
+                        }
+                        var previous = notes_flow.get_child_at_index (index);
+                        if (previous != null) {
+                            notes_flow.remove (previous);
+                            notes_flow.insert (create_note_card (visible_results[index]), index);
+                        }
+                        break;
+                    }
+                    can_refresh_one_card = false;
+                    pending_updated_note_id = null;
+                    return;
+                }
+            }
+            can_refresh_one_card = false;
+            pending_updated_note_id = null;
+            notes_flow.remove_all ();
+            shown_card_count = 0;
             notes_flow.max_children_per_line = list_toggle.active ? 1 : 3;
             append_cards (requested_card_count);
             empty_label.visible = visible_results.size == 0;
@@ -375,11 +410,18 @@ namespace Stickies {
 
         /** Rebuilds cards when a new note appears or an existing note changes. */
         private void on_note_changed (Note note) {
+            if (refresh_source_id == 0) {
+                pending_updated_note_id = note.id;
+                can_refresh_one_card = true;
+            } else if (pending_updated_note_id != note.id) {
+                can_refresh_one_card = false;
+            }
             queue_refresh ();
         }
 
         /** Rebuilds cards when a note is removed from persistent storage. */
         private void on_note_deleted (string id) {
+            can_refresh_one_card = false;
             queue_refresh ();
         }
 

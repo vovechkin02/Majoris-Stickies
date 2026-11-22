@@ -59,10 +59,10 @@ namespace Stickies {
         private Gee.ArrayList<GLib.File> pdf_previews;
         private bool is_syncing_view = false;
         private uint64 editor_revision = 0;
-        private bool title_follows_first_line = false;
         private string current_color = "";
         private string last_rendered_formatting = "";
         private Gtk.Button? pin_button;
+        private Gtk.Button? auto_title_button;
         private Gtk.Button? collapse_button;
         private Gtk.Button? float_button;
         private Gtk.Button? translucent_button;
@@ -77,8 +77,6 @@ namespace Stickies {
             this.owner = owner;
             this.repository = repository;
             this.note = note;
-            title_follows_first_line = note.title == "Untitled Note" ||
-                note.title == NoteTitle.derive (note.content);
             attachment_cancellable = new GLib.Cancellable ();
             pdf_previews = new Gee.ArrayList<GLib.File> ();
 #if HAVE_SPELLING
@@ -184,6 +182,10 @@ namespace Stickies {
             if (pin_button != null) {
                 pin_button.label = note.is_pinned ? "Unpin Note" : "Pin Note";
             }
+            if (auto_title_button != null) {
+                auto_title_button.label = note.auto_title ?
+                    "Keep Current Title" : "Use First Line as Title";
+            }
             if (collapse_button != null) {
                 collapse_button.label = note.is_collapsed ? "Expand Note" : "Collapse Note";
             }
@@ -277,6 +279,14 @@ namespace Stickies {
                 owner.copy_note (note.id);
                 popover.popdown ();
             });
+            auto_title_button = menu_item (
+                menu,
+                note.auto_title ? "Keep Current Title" : "Use First Line as Title",
+                () => {
+                    repository.set_auto_title (note.id, !note.auto_title);
+                    popover.popdown ();
+                }
+            );
             menu_item (menu, "Set Reminder…", () => {
                 popover.popdown ();
                 choose_reminder ();
@@ -830,7 +840,6 @@ namespace Stickies {
         /** Sends title changes without issuing SQL writes per key press. */
         private void on_title_changed () {
             if (!is_syncing_view) {
-                title_follows_first_line = false;
                 editor_revision++;
                 repository.set_title (note.id, title_entry.text);
             }
@@ -962,8 +971,8 @@ namespace Stickies {
                 persist_editor_body ();
                 // Only untouched/previously auto-derived titles follow the body.
                 // Manual title edits explicitly stop this behavior.
-                if (title_follows_first_line) {
-                    repository.set_title (note.id, NoteTitle.derive (editor_text ()));
+                if (note.auto_title) {
+                    repository.set_derived_title (note.id, NoteTitle.derive (editor_text ()));
                 }
             }
         }

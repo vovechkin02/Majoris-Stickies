@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.4 (editor and document reading enhancements; native release gate pending)  
+**Version:** 0.9.5 (durable title modes and manager updates; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,31 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.5 — Title-mode compatibility and manager efficiency
+
+- **Persistent title behavior:** SQLite schema v6 stores `auto_title` explicitly.
+  New blank notes follow the first nonempty body line until the title is edited
+  manually. The Note Options menu can re-enable first-line titles or retain the
+  current title. On upgrading old databases, only the unambiguous `Untitled Note`
+  placeholder remains automatic; other existing titles are kept manual to avoid
+  changing intentionally chosen headings that match body text.
+- **Sharing and synchronization:** Portable bundles retain `auto_title=1` and
+  reject import into older schemas that cannot represent it. Pre-v6 bundles
+  continue to import with conservative manual title mode. Old 16-field and
+  18-field bundle signatures are still accepted; notes without automatic mode
+  continue exporting in their legacy-compatible shape.
+- **Backups and background reminders:** Offline tools accept schema v6 and
+  retain the existing attachment and reminder fields unchanged.
+- **Manager performance:** When the visible note IDs and order remain the same,
+  a single changed card can be updated in place. Filter changes, deletions and
+  reordered results retain the complete refresh path for correctness.
+- **Verification:** Python exchange, recovery, metadata, and JavaScript checks
+  are executable without GTK. Native Vala migration and editor tests were
+  added but remain unexecuted without the Debian 13 toolchain.
+
+See [`docs/stage-9-5-qualification.md`](docs/stage-9-5-qualification.md)
+for compatibility behavior and native release prerequisites.
 
 ## v0.9.4 — Editor and PDF reading completion
 

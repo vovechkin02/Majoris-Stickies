@@ -257,3 +257,19 @@ foreach case_name : [
     suite: 'integration',
   )
 endforeach
+
+stage9_5_unit_executable = executable(
+  'test-stage9-5',
+  [core_sources, files('unit/test-stage9-5.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 9.5 persistent automatic title mode', stage9_5_unit_executable, suite: 'unit')
+
+test(
+  'Stage 9.5 title-mode interchange',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage9_5_titles.py'],
+  suite: 'integration',
+)

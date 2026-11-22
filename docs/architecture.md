@@ -461,3 +461,29 @@ comparison to the same ordering function as `list_notes()`, preserving pinned
 and last-edited priority. The editor remains local-first and its single
 source of truth is unchanged. Native Vala/GTK compilation and GNOME Wayland
 qualification are still release gates.
+
+
+## Stage 9.5 — persistent title-mode migration
+
+The current schema is **v6**. The migration adds a bounded `auto_title INTEGER
+NOT NULL DEFAULT 0 CHECK(auto_title IN (0,1))` column in an immediate SQLite
+transaction. It leaves note IDs, timestamps, body, formatting, source URLs,
+attachment identities and reminders untouched. Existing `Untitled Note`
+placeholders receive automatic mode; other historical titles remain manual.
+This is deliberately conservative because earlier schema versions did not
+record whether a title matching its first line was manually edited.
+
+The GTK editor and `NoteRepository` use `Note.auto_title` as their only source of
+truth. New notes set it before the first INSERT. User-entered titles set manual
+mode even when the strings are identical; explicit menu actions can re-enable
+first-line derivation. The repository emits ordinary GObject change signals;
+there is no second title-state observer or independent persistent setting.
+
+Portable sharing supports v4/v5 legacy records and signatures unchanged while
+carrying v6 title-mode state when required. Old applications are never allowed
+to silently discard active automatic-title metadata on import.
+
+Manager cards update individually only when the result identity ordering and
+filter selection remain stable. Any structural change uses the existing
+bounded full rebuild. The repository remains in-memory for search pending
+measured performance evidence of an actual database bottleneck.

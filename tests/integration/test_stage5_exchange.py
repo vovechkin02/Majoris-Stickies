@@ -95,7 +95,7 @@ class ExchangeTests(unittest.TestCase):
         self.assertEqual(note["content"], "Résumé / 日本語")
         self.assertEqual(next(iter(assets.values()))[1], b"sample image")
         self.assertEqual(len(digest), 64)
-        self.assertEqual(len(note), 18)
+        self.assertEqual(len(note), 19)  # Normalized with v6 title-mode default.
         self.assertEqual((note["status"], note["pinned"]), (0, 0))
         with zipfile.ZipFile(output) as archive:
             import json
