@@ -411,3 +411,23 @@ verifies persistence and single-instance command routing through the actual
 binary. It does not substitute for Wayland, Orca, GNOME Shell, Majoris Image,
 package-install/uninstall, or ISO qualification. GTK 4 and GNOME Shell runtime
 behavior must be checked on the shipping Majoris system.
+
+
+## Stage 9.1 interoperability and reminder service boundaries
+
+- `tools/stickies_exchange.py` remains the local-folder exchange boundary.
+  Note identity, inline-image identities and SHA-256 content revisions are
+  handled here rather than in the GTK view. Explicit deletion tombstones are
+  independent of Note status (Trash), which remains reversible and local.
+- `tools/stickies_rtfd.py` validates the optional Majoris-native style payload;
+  `src/services/rtfd-transfer.vala` maps source attachment UUIDs to newly
+  managed IDs, then `InlineImageFormat.remap()` resolves the editor spans.
+  External `TXT.rtf` stays the readable fallback.
+- `tools/stickies_reminders.py` is a separate opt-in process with an existing
+  SQLite contract. It is intentionally not a Singleton, Proxy, or Command
+  pattern. `systemd --user` owns the worker schedule; the main application
+  remains responsible for reminders while it is running.
+- The existing GTK/GObject observer signals remain the appropriate notification
+  idiom. No new GoF participant hierarchy was introduced solely for this pass.
+- Native build, runtime ownership, and compositor behavior still require the
+  release qualification described in `docs/stage-9-completion.md`.

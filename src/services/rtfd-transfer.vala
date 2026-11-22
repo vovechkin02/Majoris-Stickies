@@ -88,7 +88,7 @@ namespace Stickies {
                     var name = info.get_name ();
                     if (name == "TXT.rtf" || name == "majoris.json") {
                         if (info.get_file_type () != GLib.FileType.REGULAR ||
-                            (name == "majoris.json" && info.get_size () > 32 * 1024)) {
+                            (name == "majoris.json" && info.get_size () > 8 * 1024 * 1024)) {
                             throw new IOError.INVALID_DATA ("RTFD metadata is not a regular file");
                         }
                         continue;
@@ -141,25 +141,54 @@ namespace Stickies {
                 null, cancellable, out metadata_output, out metadata_error
             );
             if (!validator.get_successful () || metadata_output == null ||
-                metadata_output.length > 32 * 1024) {
+                metadata_output.length > 12 * 1024 * 1024) {
                 throw new IOError.INVALID_DATA ("RTFD attachment metadata was rejected");
             }
             var original_names = new Gee.HashMap<string, string> ();
             var original_types = new Gee.HashMap<string, string> ();
+            var original_ids = new Gee.HashMap<string, string> ();
+            string? native_content = null;
+            string? native_formatting = null;
             foreach (var line in metadata_output.split ("\n")) {
                 if (line == "") {
                     continue;
                 }
                 var fields = line.split ("\t");
-                if (fields.length != 3 || original_names.has_key (fields[0])) {
+                if (fields.length == 2 && fields[0] == "@content" &&
+                    native_content == null) {
+                    native_content = GLib.Uri.unescape_string (fields[1], null);
+                    if (native_content == null) {
+                        throw new IOError.INVALID_DATA ("Invalid native RTFD text");
+                    }
+                    continue;
+                }
+                if (fields.length == 2 && fields[0] == "@formatting" &&
+                    native_formatting == null) {
+                    native_formatting = GLib.Uri.unescape_string (fields[1], null);
+                    if (native_formatting == null) {
+                        throw new IOError.INVALID_DATA ("Invalid native RTFD styles");
+                    }
+                    continue;
+                }
+                if (fields.length != 4 || original_names.has_key (fields[0])) {
                     throw new IOError.INVALID_DATA ("Invalid RTFD metadata response");
                 }
                 var decoded = GLib.Uri.unescape_string (fields[1], null);
                 if (decoded == null || decoded == "") {
                     throw new IOError.INVALID_DATA ("Invalid RTFD display name");
                 }
+                if (fields[3] != "" && !GLib.Uuid.string_is_valid (fields[3])) {
+                    throw new IOError.INVALID_DATA ("Invalid source attachment identity");
+                }
                 original_names.set (fields[0], decoded);
                 original_types.set (fields[0], fields[2]);
+                if (fields[3] != "") {
+                    original_ids.set (fields[0], fields[3]);
+                }
+            }
+            if ((native_content == null) != (native_formatting == null) ||
+                (native_content != null && original_ids.size != attachments.size)) {
+                throw new IOError.INVALID_DATA ("Incomplete native RTFD metadata");
             }
             if (original_names.size != attachments.size) {
                 throw new IOError.INVALID_DATA ("RTFD metadata is incomplete");
@@ -170,6 +199,7 @@ namespace Stickies {
                 }
             }
             var created = new Gee.ArrayList<string> ();
+            var identities = new Gee.HashMap<string, string> ();
             try {
                 foreach (var attachment in attachments) {
                     var file_name = attachment.get_basename () ?? "";
@@ -178,6 +208,10 @@ namespace Stickies {
                         original_names.get (file_name), original_types.get (file_name)
                     );
                     created.add (copied.id);
+                    var old_id = original_ids.get (file_name);
+                    if (old_id != null) {
+                        identities.set (old_id, copied.id);
+                    }
                 }
             } catch (Error error) {
                 foreach (var id in created) {
@@ -190,8 +224,25 @@ namespace Stickies {
                 }
                 throw error;
             }
-            text = imported_text;
-            formatting = imported_formatting;
+            if (native_content != null && native_formatting != null) {
+                var resolved = InlineImageFormat.remap (native_formatting, identities);
+                if (!NoteFormatting.is_valid (native_content, resolved)) {
+                    foreach (var id in created) {
+                        try {
+                            repository.remove_attachment (note_id, id);
+                        } catch (Error cleanup_error) {
+                            warning ("RTFD validation rollback failed: %s",
+                                cleanup_error.message);
+                        }
+                    }
+                    throw new IOError.INVALID_DATA ("Native RTFD text is invalid");
+                }
+                text = native_content;
+                formatting = resolved;
+            } else {
+                text = imported_text;
+                formatting = imported_formatting;
+            }
             imported_ids = created;
         }
     }

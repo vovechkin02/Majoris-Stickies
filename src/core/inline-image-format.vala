@@ -73,9 +73,9 @@ namespace Stickies {
             return output.str;
         }
 
-        /** Restricts rendered image dimensions to three predictable presets. */
+        /** Bounds image dimensions to the 16-pixel Majoris spacing scale. */
         public static bool is_supported_width (int width_px) {
-            return width_px == 160 || width_px == 240 || width_px == 320;
+            return width_px >= 96 && width_px <= 960 && width_px % 16 == 0;
         }
     }
 }

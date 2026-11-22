@@ -8,3 +8,6 @@ usr/bin/majoris-stickies-rtf
 usr/bin/majoris-stickies-rtf-import
 usr/bin/majoris-stickies-pdf-preview
 usr/bin/majoris-stickies-rtfd
+usr/bin/majoris-stickies-reminders
+usr/lib/systemd/user/majoris-stickies-reminders.service
+usr/lib/systemd/user/majoris-stickies-reminders.timer

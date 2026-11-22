@@ -16,7 +16,7 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 MAX_NOTE_BYTES = 2 * 1024 * 1024
 MAX_FORMATTING_BYTES = 1024 * 1024
@@ -48,6 +48,30 @@ class RtfExportError(Exception):
     """Explain a rejected note, formatter, or destination."""
 
 
+def _dynamic_style(style: str) -> bool:
+    """Validate bounded rich-text tokens before generating dynamic RTF tables."""
+    if style in {"list-bullet", "list-numbered", "list-checklist"}:
+        return True
+    if re.fullmatch(r"point_([0-9]{1,2})", style):
+        value = int(style[6:])
+        return 8 <= value <= 72 and style == f"point_{value}"
+    if re.fullmatch(r"rgb_[0-9a-f]{6}", style):
+        return True
+    if re.fullmatch(r"image_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}_[0-9]{2,4}", style):
+        value = int(style.rsplit("_", 1)[1])
+        return 96 <= value <= 960 and value % 16 == 0
+    if style.startswith("face_") and len(style) <= 240:
+        try:
+            family = unquote(style[5:], encoding="utf-8", errors="strict")
+        except UnicodeError:
+            return False
+        return (bool(family) and len(family.encode("utf-8")) <= 96 and
+                all(ord(char) >= 32 and ord(char) != 127 and char not in ":\\"
+                    for char in family) and
+                quote(family, safe="") == style[5:])
+    return False
+
+
 def _spans(text: str, formatting: str) -> list[tuple[int, int, str]]:
     """Validate the same half-open Unicode offsets as NoteFormatting."""
     if len(text.encode("utf-8")) > MAX_NOTE_BYTES or len(formatting.encode("utf-8")) > MAX_FORMATTING_BYTES:
@@ -57,7 +81,7 @@ def _spans(text: str, formatting: str) -> list[tuple[int, int, str]]:
         if not line:
             continue
         fields = line.split(":")
-        if (len(fields) != 3 or fields[2] not in STYLES or
+        if (len(fields) != 3 or (fields[2] not in STYLES and not _dynamic_style(fields[2])) or
                 any(not item.isascii() or not item.isdecimal() for item in fields[:2])):
             raise RtfExportError("Invalid rich-text style interval")
         start, end = int(fields[0]), int(fields[1])
@@ -104,11 +128,36 @@ def make_rtf(title: str, content: str, formatting: str) -> bytes:
         boundaries.setdefault(end, []).append((style, False))
     positions = sorted(set((0, len(content), *boundaries)))
     active: dict[str, int] = {}
+    styles = dict(STYLES)
+    fonts = [r"{\f0\fswiss Arial;}", r"{\f1\froman Times New Roman;}",
+             r"{\f2\fmodern Courier New;}"]
+    colors = [(180, 35, 24), (21, 94, 239), (6, 118, 71)]
+    for _, _, style in sorted(spans, key=lambda span: span[2]):
+        if style in styles:
+            continue
+        if style.startswith("face_"):
+            family = unquote(style[5:], encoding="utf-8", errors="strict")
+            index = len(fonts)
+            fonts.append(r"{\f" + str(index) + r"\fnil " + _escape_rtf(family) + ";}")
+            styles[style] = rf"\f{index} "
+        elif style.startswith("rgb_"):
+            hex_value = style[4:]
+            rgb = tuple(int(hex_value[index:index + 2], 16) for index in (0, 2, 4))
+            colors.append(rgb)
+            styles[style] = rf"\cf{len(colors)} "
+        elif style.startswith("point_"):
+            styles[style] = rf"\fs{int(style[6:]) * 2} "
+        else:
+            # The marker already occurs in ordinary text, and inline media
+            # belongs to RTFD attachments rather than an invented RTF object.
+            styles[style] = ""
+    font_table = r"{\fonttbl" + "".join(fonts) + "}"
+    color_table = r"{\colortbl;" + "".join(
+        rf"\red{red}\green{green}\blue{blue};"
+        for red, green, blue in colors
+    ) + "}"
     output = [
-        r"{\rtf1\ansi\deff0\uc1",
-        r"{\fonttbl{\f0\fswiss Arial;}{\f1\froman Times New Roman;}{\f2\fmodern Courier New;}}",
-        r"{\colortbl;\red180\green35\blue24;\red21\green94\blue239;",
-        r"\red6\green118\blue71;}",
+        r"{\rtf1\ansi\deff0\uc1", font_table, color_table,
         r"\pard\f0\fs24\b ", _escape_rtf(title), r"\b0\par\par ",
     ]
     for index, position in enumerate(positions[:-1]):
@@ -121,7 +170,7 @@ def make_rtf(title: str, content: str, formatting: str) -> bytes:
         if next_position == position:
             continue
         ordered = sorted(style for style, count in active.items() if count > 0)
-        output.extend("{" + STYLES[style] for style in ordered)
+        output.extend("{" + styles[style] for style in ordered)
         output.append(_escape_rtf(content[position:next_position]))
         output.extend("}" for _ in ordered)
     output.append("}")

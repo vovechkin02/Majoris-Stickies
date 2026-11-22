@@ -50,6 +50,7 @@ import_rtf = _rtf_import.import_rtf
 MAX_ATTACHMENTS = 32
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 MAX_PACKAGE_BYTES = 128 * 1024 * 1024
+MAX_MANIFEST_BYTES = 8 * 1024 * 1024
 SAFE_ASSET_NAME = re.compile(r"attachment-[0-9]{4}\.[a-z0-9]{1,8}\Z")
 MIME_SUFFIXES = {
     "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
@@ -61,6 +62,27 @@ MIME_SUFFIXES = {
 
 class RtfdError(ValueError):
     """Report a rejected package or failed local interchange operation."""
+
+
+def _unique_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Reject ambiguous JSON manifests containing duplicate object keys."""
+    record: dict[str, object] = {}
+    for key, value in pairs:
+        if key in record:
+            raise RtfdError("Duplicate RTFD metadata field")
+        record[key] = value
+    return record
+
+
+def _read_manifest(path: Path) -> dict[str, object]:
+    """Load one bounded, non-symlink metadata object with unique fields."""
+    _regular_file(path, MAX_MANIFEST_BYTES)
+    record = json.loads(
+        path.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs
+    )
+    if not isinstance(record, dict) or record.get("format") != "majoris-rtfd-1":
+        raise RtfdError("Unsupported RTFD metadata format")
+    return record
 
 
 def _regular_file(path: Path, limit: int) -> int:
@@ -97,7 +119,10 @@ def export_note(data_dir: Path, note_id: str, destination: Path) -> None:
     if len(attachments) > MAX_ATTACHMENTS:
         raise RtfdError("RTFD package has more than 32 attachments")
     rendered = make_rtf(*note)
-    manifest = {"format": "majoris-rtfd-1", "attachments": []}
+    manifest = {
+        "format": "majoris-rtfd-1", "attachments": [],
+        "native": {"content": note[1], "formatting": note[2]},
+    }
     asset_paths: list[tuple[Path, str, int]] = []
     package_bytes = len(rendered)
     for index, (identity, display_name, mime) in enumerate(attachments, 1):
@@ -111,18 +136,22 @@ def export_note(data_dir: Path, note_id: str, destination: Path) -> None:
         name = f"attachment-{index:04d}{MIME_SUFFIXES[mime]}"
         asset_paths.append((source, name, length))
         manifest["attachments"].append(
-            {"file": name, "name": display_name[:255], "mime": mime}
+            {"file": name, "name": display_name[:255], "mime": mime,
+             "source_id": identity}
         )
+    encoded_manifest = json.dumps(
+        manifest, ensure_ascii=True, separators=(",", ":")
+    ).encode("utf-8")
+    if len(encoded_manifest) > MAX_MANIFEST_BYTES or (package_bytes +
+                                                       len(encoded_manifest) > MAX_PACKAGE_BYTES):
+        raise RtfdError("RTFD metadata exceeds the safe package size")
     try:
         destination.mkdir(mode=0o700)
     except OSError as error:
         raise RtfdError("Cannot create new RTFD directory") from error
     try:
         (destination / "TXT.rtf").write_bytes(rendered)
-        (destination / "majoris.json").write_text(
-            json.dumps(manifest, ensure_ascii=True, separators=(",", ":")),
-            encoding="utf-8",
-        )
+        (destination / "majoris.json").write_bytes(encoded_manifest)
         for source, name, expected_length in asset_paths:
             target = destination / name
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
@@ -166,10 +195,8 @@ def inspect_package(source: Path) -> tuple[str, str, list[Path]]:
         if path.name == "TXT.rtf":
             continue
         if path.name == "majoris.json":
-            total_bytes += _regular_file(path, 32 * 1024)
-            metadata = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(metadata, dict) or metadata.get("format") != "majoris-rtfd-1":
-                raise RtfdError("Unsupported Majoris RTFD manifest")
+            total_bytes += _regular_file(path, MAX_MANIFEST_BYTES)
+            _read_manifest(path)
             continue
         mime, _ = mimetypes.guess_type(path.name)
         if not SAFE_ASSET_NAME.fullmatch(path.name) or (
@@ -183,6 +210,7 @@ def inspect_package(source: Path) -> tuple[str, str, list[Path]]:
     if len(included) > MAX_ATTACHMENTS:
         raise RtfdError("RTFD package contains too many attachments")
     read_attachment_metadata(source, included)
+    read_native_note(source, included)
     return text, formatting, included
 
 
@@ -201,10 +229,7 @@ def read_attachment_metadata(source: Path, included: list[Path]) -> dict[str, tu
             asset.name: (asset.name, mimetypes.guess_type(asset.name)[0] or "")
             for asset in included
         }
-    _regular_file(manifest_path, 32 * 1024)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(manifest, dict) or manifest.get("format") != "majoris-rtfd-1":
-        raise RtfdError("Unsupported RTFD metadata format")
+    manifest = _read_manifest(manifest_path)
     entries = manifest.get("attachments")
     if not isinstance(entries, list) or len(entries) != len(included):
         raise RtfdError("RTFD metadata does not match its attachment collection")
@@ -224,10 +249,63 @@ def read_attachment_metadata(source: Path, included: list[Path]) -> dict[str, tu
                 or any(ord(char) < 32 or ord(char) == 127 for char in name)
                 or not isinstance(mime, str)
                 or mime not in MIME_SUFFIXES
-                or not filename.endswith(MIME_SUFFIXES[mime])):
+                or not filename.endswith(MIME_SUFFIXES[mime])
+                or ("source_id" in entry and
+                    (not isinstance(entry["source_id"], str) or
+                     not IDENTIFIER.fullmatch(entry["source_id"])))):
             raise RtfdError("Invalid RTFD attachment name, type, or mapping")
         metadata[filename] = (name, mime)
     return metadata
+
+def read_native_note(
+    source: Path, included: list[Path]
+) -> tuple[str, str, dict[str, str]] | None:
+    """Validate the optional lossless Majoris text and inline asset identities.
+
+    Standard TXT.rtf always remains the external interchange fallback. The
+    native payload is used only by Majoris when all its references validate.
+    """
+    manifest_path = source / "majoris.json"
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        return None
+    manifest = _read_manifest(manifest_path)
+    native = manifest.get("native")
+    if native is None:
+        return None
+    if not isinstance(native, dict) or set(native) != {"content", "formatting"}:
+        raise RtfdError("Invalid native note payload")
+    text, formatting = native["content"], native["formatting"]
+    if not isinstance(text, str) or not isinstance(formatting, str):
+        raise RtfdError("RTFD native text is not UTF-8")
+    if "\x00" in text or "\x00" in formatting:
+        raise RtfdError("RTFD native note contains NUL")
+    if (len(text.encode("utf-8")) > _rtf_export.MAX_NOTE_BYTES or
+            len(formatting.encode("utf-8")) > _rtf_export.MAX_FORMATTING_BYTES):
+        raise RtfdError("Native note payload exceeds the supported size")
+    spans = _rtf_export._spans(text, formatting)
+    assets_by_file = {entry["file"]: entry for entry in manifest["attachments"]}
+    source_ids: dict[str, str] = {}
+    for file in included:
+        entry = assets_by_file[file.name]
+        identity = entry.get("source_id")
+        if not isinstance(identity, str) or not IDENTIFIER.fullmatch(identity):
+            raise RtfdError("Native RTFD requires stable attachment identifiers")
+        if identity in source_ids.values():
+            raise RtfdError("Native RTFD contains duplicate attachment identities")
+        source_ids[file.name] = identity
+    by_id = {identifier: assets_by_file[name] for name, identifier in source_ids.items()}
+    for start, end, style in spans:
+        if not style.startswith("image_"):
+            continue
+        match = _rtf_export.re.fullmatch(
+            r"image_([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})_([0-9]{2,4})", style
+        )
+        if (not match or end != start + 1 or text[start:end] != "\uFFFC" or
+                match.group(1) not in by_id or
+                not by_id[match.group(1)]["mime"].startswith("image/")):
+            raise RtfdError("Native inline media does not match the manifest")
+    return text, formatting, source_ids
+
 
 def main(argv: list[str] | None = None) -> int:
     """Expose explicit local export and non-mutating inspect operations."""
@@ -252,9 +330,17 @@ def main(argv: list[str] | None = None) -> int:
         else:
             _, _, assets = inspect_package(args.source)
             descriptions = read_attachment_metadata(args.source, assets)
+            native = read_native_note(args.source, assets)
+            if native is not None:
+                text, formatting, identities = native
+                print(f"@content\t{quote(text, safe='')}")
+                print(f"@formatting\t{quote(formatting, safe='')}")
+            else:
+                identities = {}
             for asset in assets:
                 name, mime = descriptions[asset.name]
-                print(f"{asset.name}\t{quote(name, safe='')}\t{mime}")
+                print(f"{asset.name}\t{quote(name, safe='')}\t{mime}\t"
+                      f"{identities.get(asset.name, '')}")
     except (OSError, sqlite3.Error, UnicodeError, json.JSONDecodeError,
             RtfdError, RtfImportError, RtfExportError) as error:
         print(f"RTFD failed: {error}", file=sys.stderr)

@@ -123,44 +123,46 @@ namespace Stickies {
             fallback.set_size_request (width_px, 96);
             presentation.append (fallback);
 #endif
-            var size_controls = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
-            size_controls.add_css_class ("linked");
+            var resize_controls = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            var size_label = new Gtk.Label ("%d px".printf (width_px));
+            var width_slider = new Gtk.Scale.with_range (
+                Gtk.Orientation.HORIZONTAL, 96.0, 960.0, 16.0
+            );
+            width_slider.hexpand = true;
+            width_slider.draw_value = false;
+            width_slider.set_value ((double) width_px);
+            width_slider.tooltip_text = "Resize image width between 96 and 960 pixels";
             string active_style = style;
-            foreach (int desired_width in new int[] { 160, 240, 320 }) {
-                var chosen_width = desired_width;
-                var button = new Gtk.Button.with_label (
-                    "%d px".printf (chosen_width)
+            width_slider.value_changed.connect (() => {
+                int chosen_width = (int) width_slider.get_value ();
+                if (chosen_width % 16 != 0 ||
+                    !InlineImageFormat.is_supported_width (chosen_width)) {
+                    return;
+                }
+                Gtk.TextIter current;
+                buffer.get_iter_at_child_anchor (out current, anchor);
+                var next = current;
+                next.forward_char ();
+                var old_tag = buffer.tag_table.lookup (active_style);
+                if (old_tag != null) {
+                    buffer.remove_tag (old_tag, current, next);
+                }
+                active_style = InlineImageFormat.token (
+                    attachment.id, chosen_width
                 );
-                button.add_css_class ("flat");
-                button.tooltip_text = "Resize inline image to %d pixels".printf (
-                    chosen_width
-                );
-                button.clicked.connect (() => {
-                    Gtk.TextIter current;
-                    buffer.get_iter_at_child_anchor (out current, anchor);
-                    var next = current;
-                    next.forward_char ();
-                    var old_tag = buffer.tag_table.lookup (active_style);
-                    if (old_tag != null) {
-                        buffer.remove_tag (old_tag, current, next);
-                    }
-                    active_style = InlineImageFormat.token (
-                        attachment.id, chosen_width
-                    );
-                    buffer.apply_tag (
-                        get_tag (active_style), current, next
-                    );
-                    presentation.set_size_request (chosen_width, -1);
+                buffer.apply_tag (get_tag (active_style), current, next);
+                presentation.set_size_request (chosen_width, -1);
 #if HAVE_IMAGEKIT
-                    viewer.set_size_request (chosen_width, 120);
+                viewer.set_size_request (chosen_width, 120);
 #else
-                    fallback.set_size_request (chosen_width, 96);
+                fallback.set_size_request (chosen_width, 96);
 #endif
-                    changed ();
-                });
-                size_controls.append (button);
-            }
-            presentation.append (size_controls);
+                size_label.label = "%d px".printf (chosen_width);
+                changed ();
+            });
+            resize_controls.append (size_label);
+            resize_controls.append (width_slider);
+            presentation.append (resize_controls);
             presentation.tooltip_text = attachment.display_name;
             text_view.add_child_at_anchor (presentation, anchor);
         }

@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.0 (Stage 9 release-hardening source candidate; native release gate pending)  
+**Version:** 0.9.1 (Stage 9.1 interoperability and reliability update; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,39 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## Stage 9.1 remaining-functional-gaps pass (v0.9.1)
+
+- **Portable content:** Rich-text share bundles now accept custom font/size/color
+  tokens and safely remap inline media attachment identities when imported.
+  Cross-device revision hashes remain stable when attachment UUIDs change.
+- **Deletions:** The existing closed-app, local-folder sync can optionally
+  propagate permanent deletions using verified tombstones with conflict copies.
+  Explicit `--propagate-deletions` consent is required.
+- **RTF/RTFD:** RTF supports generated font/color tables. RTFD includes a
+  validated Majoris-native extension preserving inline media positions and
+  styles, with external `TXT.rtf` fallback.
+- **Desktop/editor:** User-chosen local reminder deadlines, 96–960 px
+  16-pixel-step inline image resizing, and note creation beyond 64 simultaneously
+  open desktop windows.
+- **Reminders when closed:** An optional, disabled-by-default systemd user timer
+  invokes a bounded offline reminder helper. It yields while Stickies is open.
+- **Compatibility:** The database remains schema v5; Stage 1–9 note data and
+  older share bundles remain supported. Majoris Image remains the renderer.
+
+To enable optional background reminders after installation:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now majoris-stickies-reminders.timer
+```
+
+The timer can be disabled with `systemctl --user disable --now
+majoris-stickies-reminders.timer` (enter this as a single command). The required
+notification utility is provided by the recommended `libnotify-bin` package.
+
+See [`docs/stage-9-completion.md`](docs/stage-9-completion.md) for detailed
+compatibility, opt-in deletion semantics, tests, and remaining qualifications.
 
 ## Stage 9 release-hardening pass (v0.9.0)
 

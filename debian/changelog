@@ -1,3 +1,17 @@
+majoris-stickies (0.9.1-1) unstable; urgency=medium
+
+  * Preserve dynamic rich text and remapped inline images in portable shares.
+  * Add explicitly confirmed deletion propagation with conflict-preserving tombstones.
+  * Add Majoris-native RTFD round-trip metadata while keeping readable TXT.rtf.
+  * Export user-chosen fonts, RGB colors, sizes, and list markers to safe RTF.
+  * Provide custom local reminder times and optional disabled-by-default user timer.
+  * Allow additional notes beyond the compositor's 64 simultaneous window limit.
+  * Replace three inline image sizes with bounded 96–960 px resize slider.
+  * Preserve SQLite schema v5, note IDs, and legacy portable share formats.
+  * Native compilation and GNOME Wayland qualification remain outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Sun, 22 Nov 2026 21:00:00 +1100
+
 majoris-stickies (0.9.0-1) unstable; urgency=medium
 
   * Add branded scalable application icon and synchronized desktop/AppStream metadata.

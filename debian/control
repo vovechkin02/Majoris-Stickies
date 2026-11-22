@@ -20,7 +20,7 @@ Package: majoris-stickies
 Architecture: any
 Depends: ${misc:Depends}, ${shlibs:Depends}, python3
 Recommends: xdg-desktop-portal-gnome, gnome-shell-extension-majoris-stickies,
-            poppler-utils
+            poppler-utils, libnotify-bin
 Description: Native desktop sticky notes for Majoris OS
  Stickies provides local-first colored desktop notes, rich-text editing,
  screenshot capture, reminders, handwriting, RTF import/export and HTML sharing,

@@ -21,3 +21,10 @@ if get_option('shell_extension')
     install_dir: get_option('datadir') / 'gnome-shell/extensions/majoris-stickies@majoris.org',
   )
 endif
+
+# Installed but disabled: the user explicitly opts into offline background reminders.
+install_data(
+  'systemd/majoris-stickies-reminders.service',
+  'systemd/majoris-stickies-reminders.timer',
+  install_dir: get_option('prefix') / 'lib/systemd/user',
+)

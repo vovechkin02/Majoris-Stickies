@@ -23,7 +23,7 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 BUNDLE_VERSION = 1
 SCHEMA_VERSION = 5
@@ -35,6 +35,9 @@ MAX_NOTE_TEXT = 2 * 1024 * 1024
 MAX_STATE_BYTES = 2 * 1024 * 1024
 IDENTIFIER = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+INLINE_IMAGE = re.compile(r"image_([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})_([0-9]{2,4})\Z")
+RGB_STYLE = re.compile(r"rgb_[0-9a-f]{6}\Z")
+POINT_STYLE = re.compile(r"point_([0-9]|[1-9][0-9])\Z")
 DATA_DIR = Path.home() / ".local/share/majoris/stickies"
 NOTE_COLUMNS = (
     "id", "title", "content", "color", "created_at_us", "updated_at_us",
@@ -83,6 +86,81 @@ def _valid_id(value: object) -> bool:
     return isinstance(value, str) and IDENTIFIER.fullmatch(value) is not None
 
 
+def _style_supported(style: str) -> bool:
+    """Match the editor's bounded fixed, dynamic, and inline-image style tokens."""
+    fixed = {
+        "bold", "italic", "underline", "strikethrough", "monospace", "large", "small",
+        "font-sans", "font-serif", "font-monospace",
+        *(f"size-{point}" for point in (10, 12, 14, 16, 18, 20, 24)),
+        "text-red", "text-blue", "text-green", "align-left", "align-center",
+        "align-right", "list-bullet", "list-numbered", "list-checklist",
+    }
+    if style in fixed or RGB_STYLE.fullmatch(style):
+        return True
+    image = INLINE_IMAGE.fullmatch(style)
+    if image:
+        width = int(image.group(2))
+        return 96 <= width <= 960 and width % 16 == 0 and style.endswith(f"_{width}")
+    match = POINT_STYLE.fullmatch(style)
+    if match:
+        return 8 <= int(match.group(1)) <= 72 and style == f"point_{int(match.group(1))}"
+    if style.startswith("face_") and len(style) <= 240:
+        try:
+            family = unquote(style[5:], encoding="utf-8", errors="strict")
+        except UnicodeError:
+            return False
+        return (bool(family) and len(family.encode("utf-8")) <= 96 and
+                all(ord(char) >= 32 and char != "\x7f" and char not in ":\\"
+                    for char in family) and
+                quote(family, safe="") == style[5:])
+    return False
+
+
+def _image_references(note: dict[str, Any]) -> set[str]:
+    """Validate object-character placement and collect referenced image identities."""
+    references: set[str] = set()
+    for line in note["formatting"].splitlines():
+        if not line:
+            continue
+        start_text, end_text, style = line.split(":")
+        match = INLINE_IMAGE.fullmatch(style)
+        if match:
+            start, end = int(start_text), int(end_text)
+            if end != start + 1 or note["content"][start:end] != "\uFFFC":
+                raise ExchangeError("Inline-image span must cover one object character")
+            references.add(match.group(1))
+    return references
+
+
+def _verify_image_references(
+    note: dict[str, Any], assets: dict[str, tuple[dict[str, str], bytes]]
+) -> None:
+    """Require every inline image to belong to this verified note's image assets."""
+    for identity in _image_references(note):
+        if identity not in assets or not assets[identity][0]["mime"].startswith("image/"):
+            raise ExchangeError("Inline image references an absent or non-image attachment")
+
+
+def _remap_inline_formatting(formatting: str, identities: dict[str, str]) -> str:
+    """Change only validated inline-image identities, retaining all other spans."""
+    lines = []
+    for line in formatting.split("\n"):
+        fields = line.split(":")
+        if len(fields) == 3:
+            match = INLINE_IMAGE.fullmatch(fields[2])
+            if match and match.group(1) in identities:
+                fields[2] = f"image_{identities[match.group(1)]}_{match.group(2)}"
+                line = ":".join(fields)
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _portable_formatting(formatting: str, records: list[dict[str, str]]) -> str:
+    """Hash portable media content, not machine-specific attachment UUIDs."""
+    hashes = {record["id"]: record["sha256"] for record in records}
+    return _remap_inline_formatting(formatting, hashes)
+
+
 def _validate_note(note: object) -> dict[str, Any]:
     """Check a remote record before any database or filesystem mutation."""
     if not isinstance(note, dict) or set(note) not in (
@@ -103,20 +181,13 @@ def _validate_note(note: object) -> dict[str, Any]:
     formatting = note["formatting"]
     if len(formatting.encode("utf-8")) > 1048576:
         raise ExchangeError("Formatting exceeds the supported size")
-    styles = {
-        "bold", "italic", "underline", "strikethrough", "monospace", "large", "small",
-        "font-sans", "font-serif", "font-monospace",
-        *(f"size-{point}" for point in (10, 12, 14, 16, 18, 20, 24)),
-        "text-red", "text-blue", "text-green",
-        "align-left", "align-center", "align-right",
-    }
     if len(formatting.splitlines()) > 20000:
         raise ExchangeError("Too many formatting spans")
     for line in formatting.splitlines():
         if not line:
             continue
         fields = line.split(":")
-        if len(fields) != 3 or fields[2] not in styles or not all(
+        if len(fields) != 3 or not _style_supported(fields[2]) or not all(
             item.isascii() and item.isdecimal() for item in fields[:2]
         ):
             raise ExchangeError("Invalid note formatting")
@@ -224,7 +295,8 @@ def _revision(note: dict[str, Any], records: list[dict[str, str]]) -> str:
         key=lambda value: (value["name"], value["mime"], value["sha256"]),
     )
     return _sha256(_json_bytes({
-        "note": {name: note[name] for name in shared_fields}, "assets": portable_assets,
+        "note": {name: (_portable_formatting(note[name], records) if name == "formatting"
+                         else note[name]) for name in shared_fields}, "assets": portable_assets,
     }))
 
 
@@ -240,7 +312,8 @@ def _legacy_revision(note: dict[str, Any], entries: list[dict[str, str]]) -> str
         key=lambda value: (value["name"], value["mime"], value["sha256"]),
     )
     return _sha256(_json_bytes({
-        "note": {key: note[key] for key in legacy_fields},
+        "note": {key: (_portable_formatting(note[key], entries) if key == "formatting"
+                         else note[key]) for key in legacy_fields},
         "assets": portable_assets,
     }))
 
@@ -249,6 +322,7 @@ def _pack_note(
     note: dict[str, Any], assets: dict[str, tuple[dict[str, str], bytes]]
 ) -> tuple[bytes, str]:
     """Create a bounded, deterministic single-note ZIP with verified assets."""
+    _verify_image_references(note, assets)
     records = [assets[key][0] for key in sorted(assets)]
     legacy = note["status"] == 0 and note["pinned"] == 0
     revision = _legacy_revision(note, records) if legacy else _revision(note, records)
@@ -319,6 +393,7 @@ def _read_bundle(path: Path) -> tuple[dict[str, Any], dict[str, tuple[dict[str, 
             for member in archive.infolist():
                 if (member.flag_bits & 1) or (member.external_attr >> 16) & 0o170000 == 0o120000:
                     raise ExchangeError("Encrypted or symlink archive members are not permitted")
+            _verify_image_references(note, assets)
             revision = _revision(note, entries)
             if revision != manifest["revision"]:
                 legacy_revision = _legacy_revision(note, entries)
@@ -331,6 +406,35 @@ def _read_bundle(path: Path) -> tuple[dict[str, Any], dict[str, tuple[dict[str, 
             return note, assets, manifest["revision"]
     except (KeyError, zipfile.BadZipFile, OSError, ValueError) as error:
         raise ExchangeError("Unreadable or invalid note bundle") from error
+
+
+def _tombstone_payload(note_id: str, previous: str) -> bytes:
+    """Describe one explicitly confirmed deletion without transferring note content."""
+    if not _valid_id(note_id) or not SHA256.fullmatch(previous):
+        raise ExchangeError("Invalid deletion identity or last-agreed revision")
+    return _json_bytes({
+        "format": "majoris-stickies-deletion", "version": 1,
+        "id": note_id, "previous": previous,
+    })
+
+
+def _read_tombstone(path: Path) -> tuple[str, str, str]:
+    """Validate a bounded, regular tombstone and its matching filename."""
+    if not _valid_id(path.stem) or path.suffix != ".deleted":
+        raise ExchangeError("Unexpected deletion record filename")
+    _check_source_file(path, 1024)
+    raw = path.read_bytes()
+    entry = _decode_unique(raw)
+    if (not isinstance(entry, dict) or set(entry) != {
+            "format", "version", "id", "previous"} or
+            entry["format"] != "majoris-stickies-deletion" or
+            type(entry["version"]) is not int or entry["version"] != 1 or
+            entry["id"] != path.stem or not isinstance(entry["previous"], str) or
+            not SHA256.fullmatch(entry["previous"])):
+        raise ExchangeError("Invalid synchronization tombstone")
+    return entry["id"], entry["previous"], _sha256(_tombstone_payload(
+        entry["id"], entry["previous"]
+    ))
 
 
 def _atomic_write(path: Path, contents: bytes, *, replace: bool = True) -> None:
@@ -383,6 +487,9 @@ def _apply_remote(
         record["title"] = ("Conflict copy — " + record["title"])[:160]
         record["updated_at_us"] += 1
     record["visible"] = 0  # Never open another machine's windows unexpectedly.
+    _verify_image_references(record, assets)
+    new_asset_ids = {identity: str(uuid.uuid4()) for identity in assets}
+    record["formatting"] = _remap_inline_formatting(record["formatting"], new_asset_ids)
     stored: list[Path] = []
     if (data_dir / "attachments").is_symlink():
         raise ExchangeError("Attachment directory must not be a symbolic link")
@@ -398,8 +505,8 @@ def _apply_remote(
             f"INSERT INTO notes({fields}) VALUES({placeholders})",
             tuple(record[field] for field in columns),
         )
-        for entry, content in assets.values():
-            new_id = str(uuid.uuid4())
+        for old_id, (entry, content) in assets.items():
+            new_id = new_asset_ids[old_id]
             path = data_dir / "attachments" / f"{new_id}.asset"
             if path.exists() or path.is_symlink():
                 raise ExchangeError("Generated attachment path already exists")
@@ -446,7 +553,9 @@ def _application_is_running() -> bool:
     return "boolean true" in result.stdout
 
 
-def _sync_folder_unlocked(data_dir: Path, folder: Path, app_closed: bool) -> dict[str, int]:
+def _sync_folder_unlocked(
+    data_dir: Path, folder: Path, app_closed: bool, propagate_deletions: bool = False
+) -> dict[str, int]:
     """Merge one folder while its advisory lock remains held by the caller."""
     if not app_closed:
         raise ExchangeError("Close Stickies first, then confirm with --app-closed")
@@ -459,7 +568,15 @@ def _sync_folder_unlocked(data_dir: Path, folder: Path, app_closed: bool) -> dic
     snapshot, database_path = _snapshot(data_dir)
     originals = _note_records(snapshot)
     remote: dict[str, tuple[dict[str, Any], dict[str, tuple[dict[str, str], bytes]], str]] = {}
+    tombstones: dict[str, tuple[str, str]] = {}
     try:
+        for path in sorted(folder.glob("*.deleted")):
+            if not propagate_deletions:
+                raise ExchangeError(
+                    "Folder contains deletion records; confirm with --propagate-deletions"
+                )
+            identifier, base, digest = _read_tombstone(path)
+            tombstones[identifier] = (base, digest)
         for path in sorted(folder.glob("*.stickies")):
             identifier = path.stem
             if not _valid_id(identifier):
@@ -468,6 +585,8 @@ def _sync_folder_unlocked(data_dir: Path, folder: Path, app_closed: bool) -> dic
             if record[0]["id"] != identifier:
                 raise ExchangeError("Shared filename does not match note identity")
             remote[identifier] = record
+            if identifier in tombstones and tombstones[identifier][0] != record[2]:
+                raise ExchangeError("Deletion record conflicts with a newer remote note")
         outgoing: dict[str, tuple[bytes, str]] = {}
         for identifier, note in originals.items():
             assets = _assets_for_note(snapshot, data_dir, identifier)
@@ -477,7 +596,10 @@ def _sync_folder_unlocked(data_dir: Path, folder: Path, app_closed: bool) -> dic
     live = sqlite3.connect(database_path.resolve().as_uri() + "?mode=rw", uri=True, timeout=3)
     written: list[Path] = []
     obsolete: list[Path] = []
-    totals = {"published": 0, "received": 0, "conflicts": 0, "unchanged": 0}
+    totals = {"published": 0, "received": 0, "conflicts": 0,
+              "unchanged": 0, "deleted": 0}
+    publish_tombstones: list[tuple[Path, bytes]] = []
+    remove_shared_bundles: list[Path] = []
     try:
         if live.execute("PRAGMA user_version").fetchone()[0] not in (
             LEGACY_SCHEMA_VERSION, SCHEMA_VERSION
@@ -485,10 +607,55 @@ def _sync_folder_unlocked(data_dir: Path, folder: Path, app_closed: bool) -> dic
             raise ExchangeError("Local notes schema changed during synchronization")
         live.execute("PRAGMA foreign_keys=ON")
         live.execute("BEGIN IMMEDIATE")
-        for identifier in sorted(set(outgoing) | set(remote)):
+        for identifier in sorted(set(outgoing) | set(remote) | set(tombstones)):
             shared = remote.get(identifier)
             local = outgoing.get(identifier)
             previous = receipts.get(identifier)
+            deletion = tombstones.get(identifier)
+            if deletion is not None:
+                if local is not None:
+                    if not propagate_deletions:
+                        raise ExchangeError("Remote deletion requires explicit confirmation")
+                    if local[1] != deletion[0]:
+                        # Keep all divergent local work as a separately owned note.
+                        # The local bundle is authoritative for the conflict copy.
+                        temp = data_dir / f".stickies-conflict-{uuid.uuid4()}.stickies"
+                        try:
+                            _atomic_write(temp, local[0])
+                            conflict_note, conflict_assets, _ = _read_bundle(temp)
+                        finally:
+                            temp.unlink(missing_ok=True)
+                        written.extend(_apply_remote(
+                            live, data_dir, conflict_note, conflict_assets,
+                            override_id=str(uuid.uuid4()), conflict_copy=True,
+                        ))
+                        totals["conflicts"] += 1
+                    obsolete.extend(
+                        data_dir / "attachments" / f"{row[0]}.asset"
+                        for row in live.execute(
+                            "SELECT id FROM attachments WHERE note_id=?", (identifier,)
+                        )
+                    )
+                    live.execute("DELETE FROM notes WHERE id=?", (identifier,))
+                    totals["deleted"] += 1
+                receipts[identifier] = deletion[1]
+                if shared is not None:
+                    remove_shared_bundles.append(folder / f"{identifier}.stickies")
+                continue
+            if shared is not None and local is None and previous is not None and \
+                    previous == shared[2] and propagate_deletions:
+                # A note was removed locally since the last successful receipt.
+                payload = _tombstone_payload(identifier, previous)
+                publish_tombstones.append((folder / f"{identifier}.deleted", payload))
+                remove_shared_bundles.append(folder / f"{identifier}.stickies")
+                receipts[identifier] = _sha256(payload)
+                totals["deleted"] += 1
+                continue
+            if shared is not None and local is None and previous is not None and \
+                    propagate_deletions and previous != shared[2]:
+                raise ExchangeError(
+                    "Local deletion and remote edit conflict; resolve the note manually"
+                )
             if shared is None and local is not None:
                 _atomic_write(folder / f"{identifier}.stickies", local[0])
                 receipts[identifier] = local[1]
@@ -538,13 +705,20 @@ def _sync_folder_unlocked(data_dir: Path, folder: Path, app_closed: bool) -> dic
         raise
     finally:
         live.close()
+    for path, payload in publish_tombstones:
+        _atomic_write(path, payload, replace=False)
+    for path in remove_shared_bundles:
+        # Remote files were validated before mutation; the folder lock is held.
+        path.unlink(missing_ok=True)
     for path in obsolete:
         path.unlink(missing_ok=True)
     _atomic_write(data_dir / "sync-state.json", _json_bytes({"version": 1, "revisions": receipts}))
     return totals
 
 
-def sync_folder(data_dir: Path, folder: Path, app_closed: bool) -> dict[str, int]:
+def sync_folder(
+    data_dir: Path, folder: Path, app_closed: bool, propagate_deletions: bool = False
+) -> dict[str, int]:
     """Serialize local sync operations with a non-symlink advisory folder lock."""
     if not app_closed:
         raise ExchangeError("Close Stickies first, then confirm with --app-closed")
@@ -560,7 +734,7 @@ def sync_folder(data_dir: Path, folder: Path, app_closed: bool) -> dict[str, int
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise ExchangeError("Another folder synchronization is running") from error
-        return _sync_folder_unlocked(data_dir, folder, app_closed)
+        return _sync_folder_unlocked(data_dir, folder, app_closed, propagate_deletions)
     finally:
         os.close(descriptor)
 
@@ -641,6 +815,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     sync.add_argument("folder", type=Path)
     sync.add_argument("--app-closed", action="store_true", help="Confirm that Stickies is closed")
+    sync.add_argument(
+        "--propagate-deletions", action="store_true",
+        help="Explicitly publish and receive permanent note deletions"
+    )
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "list":
@@ -657,7 +835,10 @@ def main(argv: list[str] | None = None) -> int:
         elif arguments.command == "import":
             print(import_note(arguments.data_dir, arguments.source, arguments.app_closed))
         else:
-            result = sync_folder(arguments.data_dir, arguments.folder, arguments.app_closed)
+            result = sync_folder(
+                arguments.data_dir, arguments.folder, arguments.app_closed,
+                arguments.propagate_deletions
+            )
             print("Synchronized: " + ", ".join(f"{key}={value}" for key, value in result.items()))
         return 0
     except (ExchangeError, OSError, sqlite3.Error) as error:

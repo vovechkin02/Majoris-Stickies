@@ -187,22 +187,23 @@ namespace Stickies {
                 return;
             }
 
-            if (note_windows.size >= MAX_DESKTOP_NOTE_WINDOWS) {
-                report_operation_error (
-                    "Too many open notes",
-                    "Close a desktop note window before creating another. " +
-                    "All saved notes remain available in the manager."
-                );
-                return;
-            }
             try {
+                // The Shell extension limits simultaneously registered windows,
+                // not the number of notes users may create and safely store.
                 var note = store.create_note ();
                 var color = NoteDefaults.get_color ();
                 if (color != note.color) {
                     store.set_color (note.id, color);
                     store.flush_note (note.id);
                 }
-                open_note (note.id);
+                if (note_windows.size < MAX_DESKTOP_NOTE_WINDOWS) {
+                    open_note (note.id);
+                } else {
+                    show_manager ();
+                    manager_window?.show_message (
+                        "Note saved. Close a desktop note to open it (64-window limit)."
+                    );
+                }
             } catch (Error error) {
                 report_operation_error ("Unable to create note", error.message);
             }

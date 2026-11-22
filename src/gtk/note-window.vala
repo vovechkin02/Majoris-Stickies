@@ -589,10 +589,68 @@ namespace Stickies {
                 });
                 options.append (button);
             }
+            var custom_label = new Gtk.Label ("Custom date and time (local)");
+            custom_label.halign = Gtk.Align.START;
+            options.append (custom_label);
+            var custom_time = new Gtk.Entry ();
+            custom_time.text = now.add_days (1).format ("%Y-%m-%d %H:%M");
+            custom_time.placeholder_text = "YYYY-MM-DD HH:MM";
+            custom_time.tooltip_text = "Use your local time zone, within one year";
+            options.append (custom_time);
+            var custom_button = new Gtk.Button.with_label ("Set Custom Reminder");
+            custom_button.clicked.connect (() => {
+                try {
+                    var target = parse_custom_reminder (custom_time.text);
+                    repository.set_reminder (note.id, target);
+                    save_label.label = "Custom reminder set";
+                    dialog.close ();
+                } catch (Error error) {
+                    show_save_failure ("Invalid reminder: " + error.message);
+                }
+            });
+            options.append (custom_button);
             dialog.set_extra_child (options);
             dialog.add_response ("close", "Close");
             dialog.set_close_response ("close");
             dialog.present (this);
+        }
+
+        /** Parses one local wall-clock deadline without accepting partial dates or past times. */
+        private int64 parse_custom_reminder (string input) throws Error {
+            var value = input.strip ();
+            if (!GLib.Regex.match_simple (
+                "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}$", value
+            )) {
+                throw new IOError.INVALID_ARGUMENT ("Use YYYY-MM-DD HH:MM");
+            }
+            int year;
+            int month;
+            int day;
+            int hour;
+            int minute;
+            if (!int.try_parse (value.substring (0, 4), out year) ||
+                !int.try_parse (value.substring (5, 2), out month) ||
+                !int.try_parse (value.substring (8, 2), out day) ||
+                !int.try_parse (value.substring (11, 2), out hour) ||
+                !int.try_parse (value.substring (14, 2), out minute) ||
+                year < 2000 || year > 2100 || month < 1 || month > 12 ||
+                day < 1 || day > 31 || hour > 23 || minute > 59) {
+                throw new IOError.INVALID_ARGUMENT ("The date or time is invalid");
+            }
+            GLib.DateTime? requested = new GLib.DateTime.local (
+                year, month, day, hour, minute, 0.0
+            );
+            if (requested == null || requested.get_year () != year ||
+                requested.get_month () != month ||
+                requested.get_day_of_month () != day ||
+                requested.get_hour () != hour || requested.get_minute () != minute) {
+                throw new IOError.INVALID_ARGUMENT ("The local date does not exist");
+            }
+            int64 deadline_us = requested.to_unix () * 1000000;
+            if (deadline_us <= GLib.get_real_time ()) {
+                throw new IOError.INVALID_ARGUMENT ("Choose a future time");
+            }
+            return deadline_us;
         }
 
         /** Edits an explicit web origin; screenshots never fabricate a source URL. */

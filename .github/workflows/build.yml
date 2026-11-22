@@ -51,3 +51,4 @@ jobs:
           node --experimental-default-type=module tests/integration/test_layout.mjs
           python3 -m unittest discover -s tests/integration -p 'test_stage7_*.py'
           python3 -m unittest discover -s tests/integration -p 'test_stage8_*.py'
+          python3 -m unittest discover -s tests/integration -p 'test_stage9_*.py'

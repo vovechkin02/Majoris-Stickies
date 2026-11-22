@@ -185,3 +185,20 @@ test(
          '-p', 'test_stage9_release.py'],
   suite: 'integration',
 )
+
+# Stage 9.1 focused round-trip, deletion and reminder worker checks.
+foreach case_name : [
+  'test_stage9_interchange.py',
+  'test_stage9_deletions.py',
+  'test_stage9_rtfd_native.py',
+  'test_stage9_rtf_dynamic.py',
+  'test_stage9_reminders.py',
+]
+  test(
+    'Stage 9.1 ' + case_name,
+    python,
+    args: ['-m', 'unittest', 'discover', '-s',
+           meson.project_source_root() / 'tests/integration', '-p', case_name],
+    suite: 'integration',
+  )
+endforeach
