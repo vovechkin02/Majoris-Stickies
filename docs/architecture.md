@@ -338,3 +338,28 @@ features and native qualification are delivered.
 The source is *not* certified to compile or run in this environment. Refer to
 `docs/stage-8-qualification.md` for release-gate tests and outstanding feature
 parity items.
+
+
+## Stage 8 completion — bounded interoperability and compositor opacity (0.8.1)
+
+`RtfImporter` remains a narrow subprocess adapter; the Python converter reads
+font/color tables rather than fabricating palette meanings from RTF indexes.
+`RtfdTransfer` is a cohesive on-disk bundle adapter (not a new format framework):
+it delegates RTF text conversion and managed attachment copies to the existing
+`RtfImporter`/`NoteRepository` and refuses directory symlinks. The CLI helper
+exports only new directories. The application keeps all note storage in
+`NoteRepository` and backs out newly copied media after failed import.
+
+`PdfPreviewService` now accepts a bounded page argument; the temporary PNG is
+rendered by the Poppler helper, displayed using ImageKit, and deleted after the
+viewer finishes. The editor's temporary navigation state is UI-only, not SQL.
+
+The optional Shell extension owns compositor opacity through `SetTranslucent`
+and scopes the method to registered Stickies windows. GTK paper opacity remains
+a graceful fallback if the shell integration is absent. New non-native tests
+exercise RTF table mappings, RTFD package safety/round-trip, installed helper
+filenames, and desktop command-path contracts. The original schema v5 and
+share/backup compatibility surfaces are unchanged.
+
+No new GoF pattern is implied: the CLI adapters translate distinct interfaces,
+while Gtk/GObject signals remain the idiomatic event/Observer mechanism.

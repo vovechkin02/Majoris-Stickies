@@ -20,6 +20,10 @@ const INTERFACE_XML = `
       <arg type="u" name="windowId" direction="in"/>
       <arg type="b" name="enabled" direction="in"/>
     </method>
+    <method name="SetTranslucent">
+      <arg type="u" name="windowId" direction="in"/>
+      <arg type="b" name="enabled" direction="in"/>
+    </method>
     <method name="ToggleSticky">
       <arg type="u" name="windowId" direction="in"/>
       <arg type="b" name="enabled" direction="out"/>
@@ -65,6 +69,10 @@ export default class StickiesExtension extends Extension {
         global.display.disconnect(this._windowCreatedId);
         Main.layoutManager.disconnect(this._monitorsChangedId);
         for (const tracked of this._tracked.values()) {
+            const actor = tracked.window.get_compositor_private();
+            if (actor) {
+                actor.opacity = 255;
+            }
             for (const signalId of tracked.signals) {
                 tracked.window.disconnect(signalId);
             }
@@ -249,6 +257,19 @@ export default class StickiesExtension extends Extension {
             window.unmake_above();
         }
         this._registered.get(windowId).floating = enabled;
+    }
+
+    /** Applies whole-window translucency through the compositor, not GTK CSS. */
+    SetTranslucent(windowId, enabled) {
+        const window = this._findWindow(windowId);
+        if (!window || !this._registered.has(windowId)) {
+            throw new Error('Stickies note window has not been registered');
+        }
+        const actor = window.get_compositor_private();
+        if (!actor) {
+            throw new Error('The note has no compositor surface');
+        }
+        actor.opacity = enabled ? 220 : 255;
     }
 
     /** Toggle workspace visibility without exposing a non-Stickies window. */

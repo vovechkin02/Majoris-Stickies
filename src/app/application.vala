@@ -66,6 +66,8 @@ namespace Stickies {
                 create_and_open_note ();
             } else if (option == "--capture-screenshot") {
                 capture_screenshot ();
+            } else if (option == "--show-notes") {
+                show_all_note_windows ();
             }
             return 0;
         }
@@ -490,8 +492,29 @@ namespace Stickies {
             }
             try {
                 yield shell_bridge.register_window (window, note.id, note.is_floating);
+                if (note.is_translucent) {
+                    yield shell_bridge.set_translucent (window, true);
+                }
             } catch (Error error) {
                 debug ("Optional Stickies shell integration unavailable: %s", error.message);
+            }
+        }
+
+        /** Applies saved opacity through the optional GNOME compositor adapter. */
+        public void request_translucency (NoteWindow window, bool enabled) {
+            request_translucency_async.begin (window, enabled);
+        }
+
+        /** Preserves a paper-only fallback when the Shell bridge is unavailable. */
+        private async void request_translucency_async (
+            NoteWindow window, bool enabled
+        ) {
+            try {
+                yield shell_bridge.set_translucent (window, enabled);
+                window.show_status (enabled ? "Window translucent" : "Window opaque");
+            } catch (Error error) {
+                window.show_status ("Paper transparency only (Shell integration unavailable)");
+                debug ("Compositor opacity unavailable: %s", error.message);
             }
         }
 

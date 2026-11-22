@@ -1,3 +1,7 @@
+> **Historical Stage 8.0 plan:** This document describes the original v0.8.0
+> scope. The subsequent v0.8.1 completion work and updated known limitations
+> are documented in [stage-8-completion.md](stage-8-completion.md).
+
 # Stage 8 — Feature parity and bounded interoperability qualification
 
 ## Scope and compatibility

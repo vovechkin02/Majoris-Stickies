@@ -1,22 +1,28 @@
 namespace Stickies {
     /**
-     * Delegates optional first-page PDF rasterization to the bounded Poppler
-     * helper and returns a temporary PNG solely for ImageKit consumption.
+     * Delegates optional, bounded PDF-page rasterization to the Poppler helper
+     * and returns a temporary PNG solely for ImageKit consumption.
      * This service never tries to decode a PDF as an ordinary image file.
      */
     public class PdfPreviewService : GLib.Object {
         private const int MAX_PNG_BYTES = 6 * 1024 * 1024;
 
-        /** Produces a temporary, bounded first-page preview off the GTK thread. */
-        public static async GLib.File render_first_page (
+        /** Produces a bounded page preview off the GTK thread. */
+        public static async GLib.File render_page (
             GLib.File pdf,
+            int page,
             GLib.Cancellable? cancellable
         ) throws Error {
+            if (page < 1 || page > 250) {
+                throw new IOError.INVALID_ARGUMENT ("PDF page must be 1–250");
+            }
             var path = pdf.get_path ();
             if (path == null) {
                 throw new IOError.NOT_SUPPORTED ("PDF previews require a local attachment");
             }
-            string[] argv = { "majoris-stickies-pdf-preview", path };
+            string[] argv = {
+                "majoris-stickies-pdf-preview", "--page", page.to_string (), path
+            };
             var process = new GLib.Subprocess.newv (
                 argv, GLib.SubprocessFlags.STDOUT_PIPE | GLib.SubprocessFlags.STDERR_PIPE
             );
@@ -50,6 +56,13 @@ namespace Stickies {
                 throw new IOError.INVALID_DATA ("PDF preview is not a bounded regular file");
             }
             return thumbnail;
+        }
+
+        /** Preserves compatibility with callers requesting the first page. */
+        public static async GLib.File render_first_page (
+            GLib.File pdf, GLib.Cancellable? cancellable
+        ) throws Error {
+            return yield render_page (pdf, 1, cancellable);
         }
 
         /** Releases a temporary PNG and its private directory after display. */

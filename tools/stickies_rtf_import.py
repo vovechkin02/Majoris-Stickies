@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -41,6 +42,89 @@ STYLE_GROUPS = {
 }
 
 
+MAX_TABLE_BYTES = 64 * 1024
+MAX_TABLE_ENTRIES = 256
+KNOWN_COLORS = {
+    "text-red": (180, 35, 24),
+    "text-blue": (21, 94, 239),
+    "text-green": (6, 118, 71),
+}
+
+
+def _rtf_table(source: str, name: str) -> str:
+    """Locate one bounded group, respecting escaped literal braces."""
+    marker = "{" + "\\" + name
+    start = source.find(marker)
+    if start < 0:
+        return ""
+    depth = 0
+    index = start
+    while index < len(source) and index - start <= MAX_TABLE_BYTES:
+        char = source[index]
+        if char == "\\" and index + 1 < len(source) and source[index + 1] in "{}\\":
+            index += 2
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index + 1]
+        index += 1
+    raise RtfImportError(f"Malformed or oversized {name} RTF table")
+
+
+def _parse_font_table(source: str) -> dict[int, str]:
+    """Map declared RTF font IDs to supported families, not fixed indices."""
+    table = _rtf_table(source, "fonttbl")
+    result: dict[int, str] = {}
+    if not table:
+        return result
+    entries = re.findall(r"\{\\f(\d+)([^{}]{0,512});\}", table)
+    if len(entries) > MAX_TABLE_ENTRIES:
+        raise RtfImportError("RTF font table has too many entries")
+    for raw_index, definition in entries:
+        index = int(raw_index)
+        if index > 65535:
+            continue
+        clean_name = re.sub(r"\\[a-zA-Z]+-?\d* ?", "", definition).strip().lower()
+        if ("\\fmodern" in definition or
+                any(label in clean_name for label in ("mono", "courier", "consolas", "menlo"))):
+            result[index] = "font-monospace"
+        elif ("\\froman" in definition or
+              any(label in clean_name for label in ("serif", "times", "georgia", "garamond"))):
+            result[index] = "font-serif"
+        elif "\\fswiss" in definition or clean_name:
+            result[index] = "font-sans"
+    return result
+
+
+def _parse_color_table(source: str) -> dict[int, str]:
+    """Read actual color entries and map only sufficiently similar colors."""
+    table = _rtf_table(source, "colortbl")
+    result: dict[int, str] = {}
+    if not table:
+        return result
+    entries = table.split(";", MAX_TABLE_ENTRIES + 1)
+    if len(entries) > MAX_TABLE_ENTRIES + 1:
+        raise RtfImportError("RTF color table has too many entries")
+    for index, entry in enumerate(entries[:-1]):
+        channels = {}
+        for channel, raw in re.findall(r"\\(red|green|blue)(\d{1,3})(?!\d)", entry):
+            channels[channel] = int(raw)
+        if len(channels) != 3 or any(value > 255 for value in channels.values()):
+            continue
+        rgb = (channels["red"], channels["green"], channels["blue"])
+        style, distance = min(
+            ((name, sum((a - b) ** 2 for a, b in zip(rgb, color)))
+             for name, color in KNOWN_COLORS.items()),
+            key=lambda item: item[1],
+        )
+        if distance <= 115 ** 2:
+            result[index] = style
+    return result
+
+
 class RtfImportError(ValueError):
     """Indicate that an RTF file cannot safely be converted."""
 
@@ -60,6 +144,8 @@ class RtfReader:
         self.fallback = 0
         self.pending_high: int | None = None
         self.output_bytes = 0
+        self.fonts: dict[int, str] = {}
+        self.colors: dict[int, str] = {}
 
     def _set_style(self, group: str, style: str | None) -> None:
         """Keep one active style per mutually exclusive formatting group."""
@@ -145,15 +231,13 @@ class RtfReader:
         elif word in ("ulnone", "ul0"):
             self._set_style("underline", None)
         elif word == "f" and value is not None:
-            families = {0: "font-sans", 1: "font-serif", 2: "font-monospace"}
-            self._set_style("family", families.get(value))
+            self._set_style("family", self.fonts.get(value))
         elif word == "fs" and value is not None:
             candidate = f"size-{value // 2}" if value % 2 == 0 else None
             selected = candidate if candidate in STYLE_GROUPS["size"] else None
             self._set_style("size", selected)
         elif word == "cf" and value is not None:
-            colors = {1: "text-red", 2: "text-blue", 3: "text-green"}
-            self._set_style("color", colors.get(value))
+            self._set_style("color", self.colors.get(value))
         elif word in ("ql", "qc", "qr", "qj"):
             self._set_style("alignment", {
                 "ql": "align-left", "qc": "align-center", "qr": "align-right",
@@ -170,6 +254,8 @@ class RtfReader:
         if b"\x00" in data:
             raise RtfImportError("RTF contains NUL bytes")
         source = data.decode("latin-1")
+        self.fonts = _parse_font_table(source)
+        self.colors = _parse_color_table(source)
         index = 0
         optional_destination = False
         while index < len(source):

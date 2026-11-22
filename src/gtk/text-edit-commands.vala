@@ -46,6 +46,52 @@ namespace Stickies {
             buffer.end_user_action ();
         }
 
+        /** Indents or outdents selected paragraphs as one undoable edit. */
+        public static void indent_lines (Gtk.TextBuffer buffer, bool outdent) {
+            Gtk.TextIter start;
+            Gtk.TextIter end;
+            if (!buffer.get_selection_bounds (out start, out end)) {
+                buffer.get_iter_at_mark (out start, buffer.get_insert ());
+                end = start;
+            }
+            int first = start.get_line ();
+            int last = end.get_line ();
+            if (end.starts_line () && last > first) {
+                last--;
+            }
+            if (last - first > 10000) {
+                return;
+            }
+            buffer.begin_user_action ();
+            for (int line = last; line >= first; line--) {
+                Gtk.TextIter position;
+                buffer.get_iter_at_line (out position, line);
+                if (!outdent) {
+                    buffer.insert (ref position, "    ", -1);
+                    continue;
+                }
+                var end_of_indent = position;
+                int length = 0;
+                while (length < 4 && !end_of_indent.ends_line ()) {
+                    var next = end_of_indent;
+                    next.forward_char ();
+                    var symbol = buffer.get_text (end_of_indent, next, false);
+                    if (symbol != " ") {
+                        if (length == 0 && symbol == "\t") {
+                            end_of_indent = next;
+                        }
+                        break;
+                    }
+                    end_of_indent = next;
+                    length++;
+                }
+                if (end_of_indent.get_offset () > position.get_offset ()) {
+                    buffer.delete (ref position, ref end_of_indent);
+                }
+            }
+            buffer.end_user_action ();
+        }
+
         /** Toggles the checkbox at the cursor or starts a new checklist item. */
         public static void toggle_checklist_item (Gtk.TextBuffer buffer) {
             Gtk.TextIter position;

@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.8.0 (Stage 8 source implementation; native release gate pending)  
+**Version:** 0.8.1 (Stage 8 completion pass; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -165,14 +165,35 @@ Stage 7 adds (schema v5 unchanged):
   still require a Debian 13 environment with the full SDK. Stage 7 is not
   claimed as a build-verified release in this archive.
 
-**Not yet implemented / requires a later implementation pass:** RTF import/RTFD interchange, unrestricted installed-font selection and arbitrary
-point sizes/colors, true semantic editable list objects, inline positioned
-images, inline PDF page rendering, image crop/markup, true translucent top-level
-windows, workspace-sticky controls, automatic browser URL detection, and
-account-managed background synchronization. GNOME Shell and Majoris Image
-runtime integration still require native qualification. PNG/JPEG/RAW/HDR image
-preview remains delegated to compatible **Majoris Image**, not to a second
-renderer. The text-only format and separate attachment panel are unchanged.
+Stage 8 (updated in v0.8.1, SQLite v5 unchanged) adds:
+
+- **RTF import:** Unicode-aware bounded parsing of explicitly supported text
+  styles. Font and color tables are now interpreted by their declared entries;
+  unknown colors are left unstyled rather than misclassified. Async imports
+  refuse to replace an editor modified during conversion.
+- **RTFD-style folders:** Export and import `TXT.rtf` with managed image/PDF
+  attachments using `majoris-stickies-rtfd` and the note menu. Exports create
+  new `.rtfd` directories only. File counts, sizes and symlinks are validated.
+  This is **limited directory interchange**, not lossless native macOS
+  `NSFileWrapper`/RTFD import, nor image placement at exact cursor offsets.
+- **PDF page previews:** Previous/Next controls render individual pages 1–250
+  through bounded Poppler processes; Majoris Image handles the resulting PNG
+  display only. Temporary pages are removed after image loading completes.
+- **Desktop integration:** `--show-notes` opens note windows (up to 64), instead
+  of opening only the manager. The optional Shell extension can set true
+  whole-window opacity for registered Stickies windows, retaining a paper-only
+  fallback if it is unavailable. Workspace visibility and saved arrangements
+  remain compositor-owned.
+- **Editing:** Checklists are clickable at their glyphs in the GTK editor;
+  selected paragraphs can be indented or outdented. These remain plain-text
+  list constructs, **not** semantically structured nested list objects.
+
+**Still not fully implemented:** Unrestricted fonts and point sizes/colors,
+semantic structured lists, positioned inline images, full macOS RTFD fidelity,
+image markup/cropping, complex PDF navigation or annotation, browser source
+capture, and account-managed background sync. Majoris Image and GNOME runtime
+integration require native qualification. Ordinary image decoding is always
+left to **Majoris Image**; no competing image renderer has been introduced.
 
 ### Export formatted RTF
 
@@ -185,8 +206,9 @@ majoris-stickies-rtf --data-dir "$HOME/.local/share/majoris/stickies" \
 ```
 
 Only active notes are exported. The output file must not already exist.
-Attachments, inline PDF preview, RTF import, and RTFD packages are not provided.
-The helper uses only the Python standard library and never writes to SQLite.
+The standalone RTF exporter writes text only; the separate Stage 8 RTFD
+command transfers attachments as safe neighboring files. Both leave SQLite
+unchanged and use only Python standard-library modules.
 
 ## Supported platforms and integration
 
@@ -332,7 +354,8 @@ own data directory, not a shared SQLite database.
   spans. The GTK editor can import that content without writing outside the
   currently selected note. It preserves supported font, emphasis, size, color,
   and alignment tokens but skips metadata and unsupported RTF objects.
-  This is *not* lossless RTFD package interchange or general RTF import.
+  This is *not* lossless Apple RTFD interchange; the v0.8.1 RTFD-style
+  folder workflow preserves compatible text and media as separate files.
 - **Find and replace:** the repeatable, nonmodal search window supports
   case-sensitive or case-insensitive literal search, replacement and replace-all.
   **Checklists** can be toggled with Ctrl+Enter or the note menu. List prefixes
@@ -346,7 +369,7 @@ own data directory, not a shared SQLite database.
   only when its preview is expanded. No alternative image decoder was added.
 - **PDF preview:** when the installed Majoris Image component and optional
   `poppler-utils` are available, expanding a PDF attachment renders just the
-  first page to a size-limited, private PNG via a bounded Poppler subprocess.
+  requested page (1–250) to a size-limited, private PNG via bounded Poppler.
   ImageKit displays that PNG; temporary files are cleaned up on normal close.
   The PDF itself remains a managed attachment, not an inline editable object.
 - **Compatibility:** existing schema v5, UUIDs, attachment hashes, share bundles,
@@ -446,8 +469,10 @@ Stage 4 database integrity and large-collection behavior, and Stage 5 reminder
 and schema upgrades. Python tests verify
 UI resources, accessibility annotations, and eight backup/recovery cases, plus nine exchange tests. A
 separate pure-JavaScript suite checks multi-monitor placement geometry.
-Stage 8 additionally exercises the RTF converter, PDF rasterizer and new
-D-Bus/GUI command contracts without claiming native runtime verification.
+Stage 8.1 additionally exercises declared RTF font/color tables, safe RTFD
+folder round-tripping, Poppler page-two rendering, installed Python helper
+filenames, and shell opacity/launcher contracts without claiming native GTK
+runtime verification.
 
 **For this archive:** resource XML, backup/restore and shell layout tests
 run in the available tools. Meson, Vala unit tests, native GTK rendering,
@@ -456,7 +481,7 @@ been run**: this environment has no Vala/GTK/libadwaita build toolchain.
 Static checks do not establish native compilation or runtime correctness.
 
 Further details and required target-machine checks are recorded in
-[Stage 8 qualification](docs/stage-8-qualification.md). Do not label this
+[Stage 8 completion qualification](docs/stage-8-completion.md). Do not label this
 source release as compiled, runtime-qualified or complete macOS parity.
 
 ## Contributing and license
@@ -469,6 +494,6 @@ GPL-3.0-or-later; see [LICENSE](LICENSE). Original source is distributed,
 without bundling third-party binaries, image assets or Majoris Image itself.
 
 Stage-specific changes and required acceptance checks are recorded in
-[Stage 8 qualification](docs/stage-8-qualification.md). Earlier Stage 3
+[Stage 8 completion](docs/stage-8-completion.md). Earlier Stage 3
 screenshots and clipboard behavior remain documented in
 [Stage 3 qualification](docs/stage-3-qualification.md).

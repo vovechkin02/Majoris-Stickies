@@ -55,6 +55,7 @@ namespace Stickies {
         private GLib.Cancellable attachment_cancellable;
         private Gee.ArrayList<GLib.File> pdf_previews;
         private bool is_syncing_view = false;
+        private uint64 editor_revision = 0;
         private string current_color = "";
         private string last_rendered_formatting = "";
         private Gtk.Button? pin_button;
@@ -79,6 +80,7 @@ namespace Stickies {
             create_color_menu ();
             create_options_menu ();
             connect_format_buttons ();
+            register_checklist_click ();
             refresh_attachments ();
             register_attachment_drop ();
 
@@ -276,6 +278,16 @@ namespace Stickies {
                 persist_editor_body ();
                 popover.popdown ();
             });
+            menu_item (menu, "Indent Paragraphs", () => {
+                TextEditCommands.indent_lines (body_view.buffer, false);
+                persist_editor_body ();
+                popover.popdown ();
+            });
+            menu_item (menu, "Outdent Paragraphs", () => {
+                TextEditCommands.indent_lines (body_view.buffer, true);
+                persist_editor_body ();
+                popover.popdown ();
+            });
             menu_item (menu, "Toggle Checklist Item", () => {
                 TextEditCommands.toggle_checklist_item (body_view.buffer);
                 persist_editor_body ();
@@ -302,6 +314,14 @@ namespace Stickies {
             menu_item (menu, "Export Rich Text (RTF)…", () => {
                 popover.popdown ();
                 choose_rtf_export ();
+            });
+            menu_item (menu, "Import RTFD Package…", () => {
+                popover.popdown ();
+                choose_rtfd_import ();
+            });
+            menu_item (menu, "Export RTFD Package…", () => {
+                popover.popdown ();
+                choose_rtfd_export ();
             });
             menu_item (menu, "Share Note with Attachments…", () => {
                 popover.popdown ();
@@ -607,13 +627,52 @@ namespace Stickies {
         /** Sends title changes without issuing SQL writes per key press. */
         private void on_title_changed () {
             if (!is_syncing_view) {
+                editor_revision++;
                 repository.set_title (note.id, title_entry.text);
             }
+        }
+
+        /** Allows a pointer click directly on a checklist glyph to toggle its state. */
+        private void register_checklist_click () {
+            var gesture = new Gtk.GestureClick ();
+            gesture.set_button (1);
+            gesture.released.connect ((press_count, x, y) => {
+                if (press_count != 1 || is_syncing_view) {
+                    return;
+                }
+                int buffer_x;
+                int buffer_y;
+                body_view.window_to_buffer_coords (
+                    Gtk.TextWindowType.WIDGET, (int) x, (int) y,
+                    out buffer_x, out buffer_y
+                );
+                Gtk.TextIter position;
+                if (!body_view.get_iter_at_location (
+                    out position, buffer_x, buffer_y
+                ) || position.get_line_offset () > 1) {
+                    return;
+                }
+                var start = position;
+                start.set_line_offset (0);
+                var end = start;
+                if (!end.forward_char ()) {
+                    return;
+                }
+                var glyph = body_view.buffer.get_text (start, end, false);
+                if (glyph != "☐" && glyph != "☑") {
+                    return;
+                }
+                body_view.buffer.place_cursor (start);
+                TextEditCommands.toggle_checklist_item (body_view.buffer);
+                persist_editor_body ();
+            });
+            body_view.add_controller (gesture);
         }
 
         /** Sends text changes with style positions preserved by GtkTextBuffer. */
         private void on_body_changed () {
             if (!is_syncing_view) {
+                editor_revision++;
                 persist_editor_body ();
             }
         }
@@ -671,12 +730,14 @@ namespace Stickies {
             owner.request_floating (this, requested);
         }
 
-        /** Applies semitransparent paper without changing the window's chrome. */
+        /** Applies paper translucency and requests compositor-wide opacity. */
         private void toggle_translucent () {
+            var requested = !note.is_translucent;
             repository.set_presentation (
-                note.id, note.is_collapsed, note.is_floating, !note.is_translucent,
+                note.id, note.is_collapsed, note.is_floating, requested,
                 note.window_width, note.window_height, true
             );
+            owner.request_translucency (this, requested);
         }
 
         /** Opens a bounded pen canvas and saves a vector SVG as a normal attachment. */
@@ -805,12 +866,21 @@ namespace Stickies {
 
         /** Replaces editor text only after a complete and validated conversion. */
         private async void import_rtf_async (GLib.File source) {
+            uint64 revision_before_import = editor_revision;
+            var original_content = body_view.buffer.text;
+            var original_formatting = RichTextCodec.serialize (body_view.buffer);
             try {
                 string text;
                 string formatting;
                 yield RtfImporter.import_note (
                     source, attachment_cancellable, out text, out formatting
                 );
+                if (editor_revision != revision_before_import ||
+                    body_view.buffer.text != original_content ||
+                    RichTextCodec.serialize (body_view.buffer) != original_formatting) {
+                    show_status ("Import canceled: note changed during conversion");
+                    return;
+                }
                 is_syncing_view = true;
                 RichTextCodec.load (body_view.buffer, text, formatting);
                 last_rendered_formatting = formatting;
@@ -854,6 +924,103 @@ namespace Stickies {
                 return;
             } catch (Error error) {
                 show_save_failure ("Could not export RTF: " + error.message);
+            }
+        }
+
+        /** Selects a new directory package for formatted text and managed media. */
+        private void choose_rtfd_export () {
+            var dialog = new Gtk.FileDialog ();
+            dialog.title = "Export RTFD Package (New Directory)";
+            dialog.initial_name = note.id + ".rtfd";
+            dialog.save.begin (this, attachment_cancellable, (object, result) => {
+                try {
+                    var destination = dialog.save.end (result);
+                    export_rtfd_async.begin (destination);
+                } catch (IOError.CANCELLED error) {
+                    return;
+                } catch (Error error) {
+                    show_save_failure (error.message);
+                }
+            });
+        }
+
+        /** Writes a new RTFD directory through the bounded local exporter. */
+        private async void export_rtfd_async (GLib.File destination) {
+            try {
+                yield RtfdTransfer.export_note (
+                    repository, note.id, destination, attachment_cancellable
+                );
+                save_label.label = "RTFD package exported";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not export RTFD: " + error.message);
+            }
+        }
+
+        /** Selects an existing RTFD folder without following arbitrary file links. */
+        private void choose_rtfd_import () {
+            var dialog = new Gtk.FileDialog ();
+            dialog.title = "Import RTFD Folder into Note";
+            dialog.select_folder.begin (
+                this, attachment_cancellable, (object, result) => {
+                    try {
+                        var source = dialog.select_folder.end (result);
+                        import_rtfd_async.begin (source);
+                    } catch (IOError.CANCELLED error) {
+                        return;
+                    } catch (Error error) {
+                        show_save_failure (error.message);
+                    }
+                }
+            );
+        }
+
+        /** Imports RTF text and media, rolling back new files if editing races. */
+        private async void import_rtfd_async (GLib.File source) {
+            uint64 initial_revision = editor_revision;
+            var original_content = body_view.buffer.text;
+            var original_formatting = RichTextCodec.serialize (body_view.buffer);
+            Gee.ArrayList<string>? created = null;
+            try {
+                string imported_text;
+                string imported_formatting;
+                Gee.ArrayList<string> imported_ids;
+                yield RtfdTransfer.import_note (
+                    repository, note.id, source, attachment_cancellable,
+                    out imported_text, out imported_formatting, out imported_ids
+                );
+                created = imported_ids;
+                if (editor_revision != initial_revision ||
+                    body_view.buffer.text != original_content ||
+                    RichTextCodec.serialize (body_view.buffer) != original_formatting) {
+                    foreach (var attachment_id in imported_ids) {
+                        repository.remove_attachment (note.id, attachment_id);
+                    }
+                    show_status ("Import canceled: note changed during conversion");
+                    return;
+                }
+                is_syncing_view = true;
+                RichTextCodec.load (body_view.buffer, imported_text, imported_formatting);
+                last_rendered_formatting = imported_formatting;
+                repository.set_body (note.id, imported_text, imported_formatting);
+                save_label.label = "RTFD imported";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                if (created != null) {
+                    foreach (var attachment_id in created) {
+                        try {
+                            repository.remove_attachment (note.id, attachment_id);
+                        } catch (Error rollback_error) {
+                            warning ("Could not revert RTFD attachment: %s",
+                                rollback_error.message);
+                        }
+                    }
+                }
+                show_save_failure ("Could not import RTFD: " + error.message);
+            } finally {
+                is_syncing_view = false;
             }
         }
 
@@ -970,7 +1137,7 @@ namespace Stickies {
                         // preview. PDF pages are rasterized by Poppler, not ImageKit.
                         var is_pdf = attachment.mime_type == "application/pdf";
                         var expander = new Gtk.Expander (
-                            is_pdf ? "Preview PDF First Page" : "Image Preview"
+                            is_pdf ? "Preview PDF Pages" : "Image Preview"
                         );
                         expander.notify["expanded"].connect ((property) => {
                             if (!expander.expanded || expander.get_child () != null) {
@@ -978,12 +1145,71 @@ namespace Stickies {
                             }
                             var viewer = new ImageKit.ImageView ();
                             viewer.set_size_request (-1, 160);
-                            expander.set_child (viewer);
-                            if (is_pdf) {
-                                load_pdf_preview.begin (attachment, viewer);
-                            } else {
+                            if (!is_pdf) {
+                                expander.set_child (viewer);
                                 load_image_preview (attachment.path, viewer);
+                                return;
                             }
+                            var layout = new Gtk.Box (Gtk.Orientation.VERTICAL, 6);
+                            var navigation = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+                            var previous = new Gtk.Button.with_label ("Previous");
+                            var following = new Gtk.Button.with_label ("Next");
+                            var page_label = new Gtk.Label ("Page 1");
+                            previous.tooltip_text = "Preview the previous PDF page";
+                            following.tooltip_text = "Preview the next PDF page";
+                            previous.sensitive = false;
+                            navigation.append (previous);
+                            navigation.append (page_label);
+                            navigation.append (following);
+                            layout.append (navigation);
+                            layout.append (viewer);
+                            expander.set_child (layout);
+                            int shown_page = 0;
+                            bool loading_page = false;
+                            previous.clicked.connect (() => {
+                                if (loading_page || shown_page <= 1) {
+                                    return;
+                                }
+                                int requested_page = shown_page - 1;
+                                loading_page = true;
+                                previous.sensitive = false;
+                                following.sensitive = false;
+                                load_pdf_preview.begin (
+                                    attachment, viewer, requested_page, (object, result) => {
+                                        if (load_pdf_preview.end (result)) {
+                                            shown_page = requested_page;
+                                        }
+                                        loading_page = false;
+                                        page_label.label = "Page %d".printf (shown_page);
+                                        previous.sensitive = shown_page > 1;
+                                        following.sensitive = shown_page < 250;
+                                    }
+                                );
+                            });
+                            following.clicked.connect (() => {
+                                if (loading_page || shown_page >= 250) {
+                                    return;
+                                }
+                                int requested_page = shown_page + 1;
+                                loading_page = true;
+                                previous.sensitive = false;
+                                following.sensitive = false;
+                                page_label.label = "Loading page %d…".printf (requested_page);
+                                load_pdf_preview.begin (
+                                    attachment, viewer, requested_page, (object, result) => {
+                                        if (load_pdf_preview.end (result)) {
+                                            shown_page = requested_page;
+                                        }
+                                        loading_page = false;
+                                        page_label.label = "Page %d".printf (
+                                            shown_page > 0 ? shown_page : 1
+                                        );
+                                        previous.sensitive = shown_page > 1;
+                                        following.sensitive = shown_page < 250;
+                                    }
+                                );
+                            });
+                            following.clicked ();
                         });
                         attachments_box.append (expander);
                     }
@@ -1009,26 +1235,33 @@ namespace Stickies {
             });
         }
 
-        /** Renders PDF page one in a child process and delegates display to ImageKit. */
-        private async void load_pdf_preview (
-            NoteAttachment attachment, ImageKit.ImageView viewer
+        /** Renders one requested PDF page with bounded temporary-file lifetime. */
+        private async bool load_pdf_preview (
+            NoteAttachment attachment, ImageKit.ImageView viewer, int page
         ) {
+            GLib.File? preview = null;
             try {
                 var pdf = GLib.File.new_for_path (attachment.path);
-                var preview = yield PdfPreviewService.render_first_page (
-                    pdf, attachment_cancellable
+                preview = yield PdfPreviewService.render_page (
+                    pdf, page, attachment_cancellable
                 );
                 if (attachment_cancellable.is_cancelled () || viewer.get_parent () == null) {
-                    PdfPreviewService.delete_preview (preview);
-                    return;
+                    return false;
                 }
                 pdf_previews.add (preview);
                 yield viewer.load_file (preview, null, attachment_cancellable);
+                return !attachment_cancellable.is_cancelled ();
             } catch (IOError.CANCELLED error) {
-                return;
+                return false;
             } catch (Error error) {
                 if (!attachment_cancellable.is_cancelled ()) {
-                    show_status ("PDF preview unavailable: " + error.message);
+                    show_status ("PDF page unavailable: " + error.message);
+                }
+                return false;
+            } finally {
+                if (preview != null) {
+                    pdf_previews.remove (preview);
+                    PdfPreviewService.delete_preview (preview);
                 }
             }
         }

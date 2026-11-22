@@ -38,6 +38,16 @@ namespace Stickies {
             yield invoke ("Arrange", new GLib.Variant ("(ss)", mode, window_ids));
         }
 
+        /** Requests true compositor opacity for a registered note window. */
+        public async void set_translucent (
+            Gtk.ApplicationWindow window, bool enabled
+        ) throws Error {
+            yield invoke (
+                "SetTranslucent",
+                new GLib.Variant ("(ub)", (uint) window.get_id (), enabled)
+            );
+        }
+
         /** Toggles compositor-owned all-workspace visibility for one note. */
         public async bool toggle_sticky (Gtk.ApplicationWindow window) throws Error {
             var connection = yield GLib.Bus.get (GLib.BusType.SESSION, null);

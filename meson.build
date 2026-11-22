@@ -2,7 +2,7 @@ project(
   'majoris-stickies',
   'vala',
   'c',
-  version: '0.8.0',
+  version: '0.8.1',
   meson_version: '>=1.0.0',
   default_options: ['warning_level=2'],
 )
@@ -58,6 +58,13 @@ install_data(
 )
 
 install_data(
+  'tools/stickies_rtfd.py',
+  install_dir: get_option('bindir'),
+  rename: 'majoris-stickies-rtfd',
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
   'tools/stickies_pdf_preview.py',
   install_dir: get_option('bindir'),
   rename: 'majoris-stickies-pdf-preview',
@@ -65,7 +72,7 @@ install_data(
 )
 
 summary({
-  'Stage': '8 — Feature parity and bounded interoperability',
+  'Stage': '8 completion — bounded interoperability and desktop fixes',
   'ImageKit': imagekit_dep.found(),
   'Shell extension installed': get_option('shell_extension'),
   'Storage': 'SQLite, local-first',

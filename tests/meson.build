@@ -147,3 +147,13 @@ test(
          meson.project_source_root() / 'tests/integration', '-p', 'test_stage8_pdf_preview.py'],
   suite: 'integration',
 )
+
+
+test(
+  'Stage 8 completion and directory interchange',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage8_completion.py'],
+  suite: 'integration',
+)

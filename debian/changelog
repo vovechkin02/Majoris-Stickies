@@ -1,3 +1,15 @@
+majoris-stickies (0.8.1-1) unstable; urgency=medium
+
+  * Read RTF font/color tables by declared values, not assumed indexes.
+  * Fix Show All Notes desktop action and prevent import/edit race overwrites.
+  * Add bounded RTFD-style directory exchange with managed attachments.
+  * Add PDF page navigation, pointer checklists, and paragraph indentation.
+  * Support compositor opacity through the optional GNOME Shell extension.
+  * Preserve SQLite v5 and versioned interchange compatibility.
+  * Native compilation and Debian package build remain unqualified.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Sun, 22 Nov 2026 17:50:00 +1100
+
 majoris-stickies (0.8.0-1) unstable; urgency=medium
 
   * Add bounded text-only RTF import and repeatable find/replace.

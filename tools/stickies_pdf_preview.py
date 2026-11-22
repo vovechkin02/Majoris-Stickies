@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rasterize only the first PDF page for optional Majoris Image display.
+"""Rasterize one bounded PDF page for optional Majoris Image display.
 
 This helper never decodes or displays general image files. It executes Poppler
 without a shell and returns a private, bounded PNG for ImageKit to display.
@@ -21,14 +21,17 @@ MAX_PDF_BYTES = 50 * 1024 * 1024
 MAX_PNG_BYTES = 6 * 1024 * 1024
 MAX_RENDER_SECONDS = 12
 MAX_PREVIEW_EDGE = 640
+MAX_PREVIEW_PAGE = 250
 
 
 class PdfPreviewError(Exception):
     """Describe rejected inputs or a failed bounded Poppler invocation."""
 
 
-def render_first_page(source: Path) -> Path:
+def render_page(source: Path, page: int = 1) -> Path:
     """Return a fresh PNG in a 0700 directory, cleaning up on any failure."""
+    if not 1 <= page <= MAX_PREVIEW_PAGE:
+        raise PdfPreviewError("PDF page must be between 1 and 250")
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -51,7 +54,7 @@ def render_first_page(source: Path) -> Path:
     success = False
     try:
         command = [
-            "pdftoppm", "-f", "1", "-l", "1", "-singlefile", "-png",
+            "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile", "-png",
             "-scale-to", str(MAX_PREVIEW_EDGE), str(source), str(prefix),
         ]
         completed = subprocess.run(
@@ -63,7 +66,7 @@ def render_first_page(source: Path) -> Path:
             check=False,
         )
         if completed.returncode != 0:
-            raise PdfPreviewError("Poppler could not render the first PDF page")
+            raise PdfPreviewError("Poppler could not render the requested PDF page")
         if not _is_valid_output(output):
             raise PdfPreviewError("The PDF renderer did not produce a safe bounded PNG")
         success = True
@@ -75,6 +78,11 @@ def render_first_page(source: Path) -> Path:
     finally:
         if not success:
             shutil.rmtree(directory, ignore_errors=True)
+
+
+def render_first_page(source: Path) -> Path:
+    """Keep the Stage 8 first-page API for callers and existing tests."""
+    return render_page(source, 1)
 
 
 def _is_valid_output(path: Path) -> bool:
@@ -93,10 +101,11 @@ def _is_valid_output(path: Path) -> bool:
 def main(argv: list[str] | None = None) -> int:
     """Print one safe temporary output path; errors never expose PDF contents."""
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--page", type=int, default=1)
     parser.add_argument("source", type=Path)
     args = parser.parse_args(argv)
     try:
-        output = render_first_page(args.source)
+        output = render_page(args.source, args.page)
         print(output)
     except (PdfPreviewError, OSError) as error:
         print(f"PDF preview failed: {error}", file=sys.stderr)

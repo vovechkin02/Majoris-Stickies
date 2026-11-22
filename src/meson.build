@@ -21,6 +21,7 @@ service_sources = files(
   'services/pdf-preview-service.vala',
   'services/rtf-exporter.vala',
   'services/rtf-importer.vala',
+  'services/rtfd-transfer.vala',
   'services/screenshot-portal.vala',
   'services/shell-window-bridge.vala',
   'services/startup-preferences.vala',
