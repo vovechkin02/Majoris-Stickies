@@ -93,6 +93,86 @@ namespace Stickies {
             return copy;
         }
 
+        /**
+         * Duplicates a note with all managed attachments without blocking GTK on copies.
+         * On failure the incomplete duplicate is removed; the original is unchanged.
+         */
+        public async Note duplicate_complete (
+            string id,
+            GLib.Cancellable? cancellable = null
+        ) throws Error {
+            var source = find_note (id);
+            if (source == null || source.status == 2) {
+                throw new IOError.NOT_FOUND ("The source note is unavailable");
+            }
+            var attachments = list_attachments (id);
+            var copy = duplicate_note (id);
+            try {
+                foreach (var attachment in attachments) {
+                    yield clone_managed_attachment (copy.id, attachment, cancellable);
+                }
+            } catch (Error error) {
+                try {
+                    delete_note (copy.id);
+                } catch (Error cleanup_error) {
+                    warning ("Unable to roll back incomplete duplicate: %s",
+                        cleanup_error.message);
+                }
+                throw error;
+            }
+            return copy;
+        }
+
+        /**
+         * Copies a trusted managed attachment without guessing MIME from its .asset path.
+         * Neither a missing source nor a failed copy leaves an SQL attachment row.
+         */
+        private async void clone_managed_attachment (
+            string destination_note_id,
+            NoteAttachment original,
+            GLib.Cancellable? cancellable
+        ) throws Error {
+            if (GLib.DirUtils.create_with_parents (attachments_directory, 0700) != 0) {
+                throw new IOError.FAILED ("Unable to create attachment directory");
+            }
+            var new_id = GLib.Uuid.string_random ();
+            var file = GLib.File.new_for_path (attachment_path (new_id));
+            try {
+                yield GLib.File.new_for_path (original.path).copy_async (
+                    file, GLib.FileCopyFlags.NONE, GLib.Priority.DEFAULT,
+                    cancellable, null
+                );
+                var info = yield file.query_info_async (
+                    "standard::size,standard::type",
+                    GLib.FileQueryInfoFlags.NONE,
+                    GLib.Priority.DEFAULT, cancellable
+                );
+                if (info.get_file_type () != GLib.FileType.REGULAR ||
+                    info.get_size () < 0 || info.get_size () > MAX_ATTACHMENT_BYTES) {
+                    throw new IOError.INVALID_DATA ("Cloned attachment exceeds 50 MiB");
+                }
+                Sqlite.Statement statement;
+                prepare (
+                    "INSERT INTO attachments(id,note_id,display_name,mime_type) " +
+                    "VALUES(?1,?2,?3,?4)", out statement
+                );
+                check_bind (statement.bind_text (1, new_id));
+                check_bind (statement.bind_text (2, destination_note_id));
+                check_bind (statement.bind_text (3, original.display_name));
+                check_bind (statement.bind_text (4, original.mime_type));
+                check_step (statement.step ());
+                attachment_changed (destination_note_id);
+            } catch (Error error) {
+                try {
+                    file.delete (null);
+                } catch (Error cleanup_error) {
+                    warning ("Unable to remove failed duplicate asset: %s",
+                        cleanup_error.message);
+                }
+                throw error;
+            }
+        }
+
         /** Looks up a note by its stable ID, or returns null. */
         public Note? find_note (string id) {
             return notes.get (id);
@@ -106,6 +186,9 @@ namespace Stickies {
             }
 
             result.sort ((left, right) => {
+                if (left.is_pinned != right.is_pinned) {
+                    return left.is_pinned ? -1 : 1;
+                }
                 if (left.updated_at_us == right.updated_at_us) {
                     return left.id.collate (right.id);
                 }
@@ -129,6 +212,32 @@ namespace Stickies {
             }
 
             return result;
+        }
+
+        /** Changes the lifecycle state, retaining the note and its attachments. */
+        public void set_status (string id, int status) throws Error {
+            var note = find_note (id);
+            if (note == null) {
+                throw new IOError.NOT_FOUND ("The note no longer exists");
+            }
+            if (status < 0 || status > 2) {
+                throw new IOError.INVALID_ARGUMENT ("Unsupported note lifecycle state");
+            }
+            if (note.update_status (status)) {
+                queue_save (note);
+                flush_note (id);
+            }
+        }
+
+        /** Pins or unpins a note while preserving its identity and content. */
+        public void set_pinned (string id, bool enabled) throws Error {
+            var note = find_note (id);
+            if (note == null) {
+                throw new IOError.NOT_FOUND ("The note no longer exists");
+            }
+            if (note.update_pinned (enabled)) {
+                queue_save (note);
+            }
         }
 
         /** Updates a stored note's heading and schedules a debounced save. */
@@ -487,7 +596,7 @@ namespace Stickies {
         /** Migrates Stage 1 in-place and rejects unknown newer schemas. */
         private void initialize_schema () throws Error {
             int version = read_schema_version ();
-            if (version > 4) {
+            if (version > 5) {
                 throw new IOError.NOT_SUPPORTED (
                     "This notes database was created by a newer version of Stickies"
                 );
@@ -554,6 +663,20 @@ namespace Stickies {
                     throw error;
                 }
             }
+            if (version < 5) {
+                execute ("BEGIN IMMEDIATE");
+                try {
+                    execute ("ALTER TABLE notes ADD COLUMN status INTEGER NOT NULL DEFAULT 0");
+                    execute ("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+                    execute ("CREATE INDEX IF NOT EXISTS notes_status_idx " +
+                        "ON notes(status, pinned DESC, updated_at_us DESC)");
+                    execute ("PRAGMA user_version=5");
+                    execute ("COMMIT");
+                } catch (Error error) {
+                    execute ("ROLLBACK");
+                    throw error;
+                }
+            }
         }
 
         /** Rejects corrupt or hostile identifiers before accessing private files. */
@@ -589,7 +712,7 @@ namespace Stickies {
                 "SELECT id, title, content, color, created_at_us, updated_at_us, " +
                 "formatting, collapsed, floating, translucent, " +
                 "window_width, window_height, visible, source_url, " +
-                "remind_at_us, reminder_notified_at_us FROM notes",
+                "remind_at_us, reminder_notified_at_us, status, pinned FROM notes",
                 out statement
             );
 
@@ -611,7 +734,9 @@ namespace Stickies {
                     statement.column_int (12) != 0,
                     statement.column_text (13) ?? "",
                     statement.column_int64 (14),
-                    statement.column_int64 (15)
+                    statement.column_int64 (15),
+                    statement.column_int (16),
+                    statement.column_int (17) != 0
                 );
                 notes.set (note.id, note);
             }
@@ -628,8 +753,8 @@ namespace Stickies {
                 "INSERT INTO notes " +
                 "(id, title, content, color, created_at_us, updated_at_us, " +
                 "formatting, collapsed, floating, translucent, window_width, window_height, visible, " +
-                "source_url,remind_at_us,reminder_notified_at_us) " +
-                "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) " +
+                "source_url,remind_at_us,reminder_notified_at_us,status,pinned) " +
+                "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18) " +
                 "ON CONFLICT(id) DO UPDATE SET " +
                 "title=excluded.title, content=excluded.content, " +
                 "color=excluded.color, updated_at_us=excluded.updated_at_us, " +
@@ -638,7 +763,8 @@ namespace Stickies {
                 "window_width=excluded.window_width, window_height=excluded.window_height, " +
                 "visible=excluded.visible, source_url=excluded.source_url, " +
                 "remind_at_us=excluded.remind_at_us, " +
-                "reminder_notified_at_us=excluded.reminder_notified_at_us",
+                "reminder_notified_at_us=excluded.reminder_notified_at_us, " +
+                "status=excluded.status, pinned=excluded.pinned",
                 out statement
             );
             check_bind (statement.bind_text (1, note.id));
@@ -657,6 +783,8 @@ namespace Stickies {
             check_bind (statement.bind_text (14, note.source_url));
             check_bind (statement.bind_int64 (15, note.remind_at_us));
             check_bind (statement.bind_int64 (16, note.reminder_notified_at_us));
+            check_bind (statement.bind_int (17, note.status));
+            check_bind (statement.bind_int (18, note.is_pinned ? 1 : 0));
             check_step (statement.step ());
         }
 

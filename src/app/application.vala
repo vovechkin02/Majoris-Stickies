@@ -100,7 +100,7 @@ namespace Stickies {
                 var store = repository;
                 if (store != null) {
                     foreach (var note in store.list_notes ()) {
-                        if (note.is_visible) {
+                        if (note.is_visible && note.status == 0) {
                             open_note (note.id);
                         }
                     }
@@ -116,7 +116,8 @@ namespace Stickies {
             }
             int64 now_us = GLib.get_real_time ();
             foreach (var note in store.list_notes ()) {
-                if (note.remind_at_us == 0 || note.reminder_notified_at_us != 0 ||
+                if (note.status != 0 || note.remind_at_us == 0 ||
+                    note.reminder_notified_at_us != 0 ||
                     note.remind_at_us > now_us) {
                     continue;
                 }
@@ -174,6 +175,11 @@ namespace Stickies {
 
             try {
                 var note = store.create_note ();
+                var color = NoteDefaults.get_color ();
+                if (color != note.color) {
+                    store.set_color (note.id, color);
+                    store.flush_note (note.id);
+                }
                 open_note (note.id);
             } catch (Error error) {
                 report_operation_error ("Unable to create note", error.message);
@@ -187,8 +193,17 @@ namespace Stickies {
                 return;
             }
 
+            duplicate_complete_async.begin (id);
+        }
+
+        /** Copies attachments asynchronously and keeps the original intact on failure. */
+        private async void duplicate_complete_async (string id) {
+            var store = repository;
+            if (store == null) {
+                return;
+            }
             try {
-                var duplicate = store.duplicate_note (id);
+                var duplicate = yield store.duplicate_complete (id);
                 open_note (duplicate.id);
             } catch (Error error) {
                 report_operation_error ("Unable to duplicate note", error.message);
@@ -289,8 +304,8 @@ namespace Stickies {
             }
 
             var note = store.find_note (id);
-            if (note == null) {
-                report_operation_error ("Note not found", "It may have been deleted.");
+            if (note == null || note.status != 0) {
+                report_operation_error ("Note unavailable", "Restore the note first.");
                 return;
             }
 
@@ -313,35 +328,75 @@ namespace Stickies {
             });
         }
 
-        /**
-         * Asks before permanently deleting a note; Stage 1 has no Trash view.
-         * The confirmation is intentionally modal to the originating window.
-         */
+        /** Confirms moving a note to Trash or deleting it permanently from Trash. */
         public void confirm_delete_note (string id, Gtk.Widget parent) {
+            var store = repository;
+            var note = store != null ? store.find_note (id) : null;
+            if (note == null) {
+                return;
+            }
+            bool permanent = note.status == 2;
             var dialog = new Adw.AlertDialog (
-                "Delete this note permanently?",
-                "This cannot be undone."
+                permanent ? "Permanently delete this note?" : "Move this note to Trash?",
+                permanent ? "This action cannot be undone." :
+                    "You can restore the note from Trash."
             );
             dialog.add_response ("cancel", "Cancel");
-            dialog.add_response ("delete", "Delete");
+            dialog.add_response ("delete", permanent ? "Delete Permanently" : "Move to Trash");
             dialog.set_response_appearance ("delete", Adw.ResponseAppearance.DESTRUCTIVE);
             dialog.set_default_response ("cancel");
             dialog.set_close_response ("cancel");
             dialog.response.connect ((response) => {
                 if (response == "delete") {
-                    delete_note (id);
+                    if (permanent) {
+                        permanently_delete_note (id);
+                    } else {
+                        change_note_status (id, 2);
+                    }
                 }
             });
             dialog.present (parent);
         }
 
-        /** Removes a confirmed note from storage and closes its editor. */
-        private void delete_note (string id) {
+        /** Archives, trashes, or restores one note with an immediate durable write. */
+        public void change_note_status (string id, int status) {
             var store = repository;
             if (store == null) {
                 return;
             }
+            try {
+                store.set_status (id, status);
+                if (status != 0) {
+                    var window = note_windows.get (id);
+                    if (window != null) {
+                        window.close ();
+                    }
+                }
+            } catch (Error error) {
+                report_operation_error ("Unable to change note status", error.message);
+            }
+        }
 
+        /** Pins or unpins a note for prioritized ordering in the manager. */
+        public void toggle_pin (string id) {
+            var store = repository;
+            var note = store != null ? store.find_note (id) : null;
+            if (store == null || note == null) {
+                return;
+            }
+            try {
+                store.set_pinned (id, !note.is_pinned);
+            } catch (Error error) {
+                report_operation_error ("Unable to pin note", error.message);
+            }
+        }
+
+        /** Permanently deletes a note already confirmed by the user. */
+        private void permanently_delete_note (string id) {
+            var store = repository;
+            if (store == null) {
+                return;
+            }
             try {
                 store.delete_note (id);
                 var window = note_windows.get (id);
@@ -350,6 +405,30 @@ namespace Stickies {
                 }
             } catch (Error error) {
                 report_operation_error ("Unable to delete note", error.message);
+            }
+        }
+
+        /** Presents all active notes without creating unnecessary duplicates. */
+        public void show_all_note_windows () {
+            var store = repository;
+            if (store == null) {
+                return;
+            }
+            foreach (var note in store.list_notes ()) {
+                if (note.status == 0) {
+                    open_note (note.id);
+                }
+            }
+        }
+
+        /** Closes all note windows but leaves the notes themselves untouched. */
+        public void hide_all_note_windows () {
+            var windows = new Gee.ArrayList<NoteWindow> ();
+            foreach (var window in note_windows.values) {
+                windows.add (window);
+            }
+            foreach (var window in windows) {
+                window.close ();
             }
         }
 

@@ -22,8 +22,8 @@ Depends: ${misc:Depends}, ${shlibs:Depends}, python3
 Recommends: xdg-desktop-portal-gnome, gnome-shell-extension-majoris-stickies
 Description: Native desktop sticky notes for Majoris OS
  Stickies provides local-first colored desktop notes, rich-text editing,
- screenshot capture, reminders, handwriting, note sharing, optional folder
- synchronization, a searchable manager, and verified offline backups.
+ screenshot capture, reminders, handwriting, sharing, Archive/Trash, pinned
+ notes, optional folder synchronization, and verified offline backups.
 
 Package: gnome-shell-extension-majoris-stickies
 Architecture: all

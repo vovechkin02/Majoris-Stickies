@@ -13,11 +13,14 @@ gtk_sources = files(
   'gtk/manager-window.vala',
   'gtk/note-window.vala',
   'gtk/rich-text-codec.vala',
+  'gtk/text-edit-commands.vala',
 )
 
 service_sources = files(
+  'services/note-defaults.vala',
   'services/screenshot-portal.vala',
   'services/shell-window-bridge.vala',
+  'services/startup-preferences.vala',
 )
 
 app_sources = files(

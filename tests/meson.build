@@ -91,3 +91,19 @@ test(
          meson.project_source_root() / 'tests/integration', '-p', 'test_stage5_exchange.py'],
   suite: 'integration',
 )
+
+stage6_unit_executable = executable(
+  'test-stage6',
+  [core_sources, files('unit/test-stage6.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 6 lifecycle and schema migration', stage6_unit_executable, suite: 'unit')
+
+test(
+  'Stage 6 share and archive compatibility',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage6_exchange.py'],
+  suite: 'integration',
+)

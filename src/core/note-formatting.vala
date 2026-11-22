@@ -19,6 +19,22 @@ namespace Stickies {
                 case "monospace":
                 case "large":
                 case "small":
+                case "font-sans":
+                case "font-serif":
+                case "font-monospace":
+                case "size-10":
+                case "size-12":
+                case "size-14":
+                case "size-16":
+                case "size-18":
+                case "size-20":
+                case "size-24":
+                case "text-red":
+                case "text-blue":
+                case "text-green":
+                case "align-left":
+                case "align-center":
+                case "align-right":
                     return true;
                 default:
                     return false;

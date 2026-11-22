@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <object class="GtkBox" id="format_preferences">
+    <property name="orientation">vertical</property>
+    <property name="spacing">8</property>
+    <child>
+      <object class="GtkLabel">
+        <property name="label">Font Family</property>
+        <property name="halign">start</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkDropDown" id="format_family">
+        <accessibility><property name="label">Font family</property></accessibility>
+      </object>
+    </child>
+    <child>
+      <object class="GtkLabel">
+        <property name="label">Font Size (points)</property>
+        <property name="halign">start</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkDropDown" id="format_size">
+        <accessibility><property name="label">Text size</property></accessibility>
+      </object>
+    </child>
+    <child>
+      <object class="GtkLabel">
+        <property name="label">Text Color</property>
+        <property name="halign">start</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkDropDown" id="format_color">
+        <accessibility><property name="label">Text color</property></accessibility>
+      </object>
+    </child>
+    <child>
+      <object class="GtkLabel">
+        <property name="label">Paragraph Alignment</property>
+        <property name="halign">start</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkDropDown" id="format_alignment">
+        <accessibility><property name="label">Paragraph alignment</property></accessibility>
+      </object>
+    </child>
+  </object>
+  <object class="GtkBox" id="find_preferences">
+    <property name="orientation">vertical</property>
+    <property name="spacing">8</property>
+    <child>
+      <object class="GtkEntry" id="find_query">
+        <property name="placeholder-text">Find text</property>
+        <accessibility><property name="label">Find text</property></accessibility>
+      </object>
+    </child>
+    <child>
+      <object class="GtkEntry" id="find_replacement">
+        <property name="placeholder-text">Replace with</property>
+        <accessibility><property name="label">Replacement text</property></accessibility>
+      </object>
+    </child>
+  </object>
+</interface>

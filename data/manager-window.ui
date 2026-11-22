@@ -76,6 +76,14 @@
                     <property name="margin-end">18</property>
                     <property name="margin-bottom">12</property>
                     <child>
+                      <object class="GtkDropDown" id="status_filter">
+                        <property name="tooltip-text">All notes, Archive, or Trash</property>
+                        <accessibility>
+                          <property name="label">Select active, archived, or trashed notes</property>
+                        </accessibility>
+                      </object>
+                    </child>
+                    <child>
                       <object class="GtkDropDown" id="color_filter">
                         <property name="tooltip-text">Filter notes by color</property>
                         <accessibility>

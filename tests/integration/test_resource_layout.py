@@ -22,7 +22,7 @@ class ResourceLayoutTests(unittest.TestCase):
         filenames = {node.text for node in root.iter("file")}
         self.assertEqual(
             filenames,
-            {"manager-window.ui", "note-window.ui", "note-colors.css"},
+            {"manager-window.ui", "note-window.ui", "text-tools.ui", "note-colors.css"},
         )
         for name in filenames:
             self.assertTrue((self.data_dir / name).is_file(), name)

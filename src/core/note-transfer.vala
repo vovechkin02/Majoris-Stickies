@@ -24,14 +24,29 @@ namespace Stickies {
      */
     public class NoteTransfer : GLib.Object {
         private static string[] styles = {
-            "bold", "italic", "underline", "strikethrough", "monospace", "large", "small"
+            "bold", "italic", "underline", "strikethrough", "monospace", "large", "small",
+            "font-sans", "font-serif", "font-monospace", "size-10", "size-12",
+            "size-14", "size-16", "size-18", "size-20", "size-24",
+            "text-red", "text-blue", "text-green", "align-left", "align-center",
+            "align-right"
         };
         private static string[] open_tags = {
             "<strong>", "<em>", "<u>", "<s>", "<code>",
-            "<span style=\"font-size:larger\">", "<span style=\"font-size:smaller\">"
+            "<span style=\"font-size:larger\">", "<span style=\"font-size:smaller\">",
+            "<span style=\"font-family:sans-serif\">", "<span style=\"font-family:serif\">",
+            "<span style=\"font-family:monospace\">", "<span style=\"font-size:10pt\">",
+            "<span style=\"font-size:12pt\">", "<span style=\"font-size:14pt\">",
+            "<span style=\"font-size:16pt\">", "<span style=\"font-size:18pt\">",
+            "<span style=\"font-size:20pt\">", "<span style=\"font-size:24pt\">",
+            "<span style=\"color:#b42318\">", "<span style=\"color:#155eef\">",
+            "<span style=\"color:#067647\">", "<span style=\"text-align:left\">",
+            "<span style=\"text-align:center\">", "<span style=\"text-align:right\">"
         };
         private static string[] close_tags = {
-            "</strong>", "</em>", "</u>", "</s>", "</code>", "</span>", "</span>"
+            "</strong>", "</em>", "</u>", "</s>", "</code>", "</span>", "</span>",
+            "</span>", "</span>", "</span>", "</span>", "</span>", "</span>",
+            "</span>", "</span>", "</span>", "</span>", "</span>", "</span>",
+            "</span>", "</span>", "</span>", "</span>"
         };
 
         /** Copies readable note text, the explicit source and attachment names. */

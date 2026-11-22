@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.5.0 (Stage 5 source implementation)  
+**Version:** 0.6.0 (Stage 6 source implementation)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -29,7 +29,7 @@ and Debian binaries remain unqualified in this packaging environment
 Stage 1 remains supported:
 
 - Multiple separately editable notes, color palettes, centralized searchable note
-  cards, create, duplicate, permanent delete with confirmation, autosave, and
+  cards, create, duplicate, Trash (with separate permanent deletion), autosave, and
   single-instance application behavior.
 - SQLite storage with 500 ms per-note save debounce, save-on-close safeguards,
   UTF-8 note search, and standard Ctrl+N / Ctrl+F application shortcuts.
@@ -122,13 +122,39 @@ Stage 5 adds:
   to schema v4, adding reminder deadline and delivery columns. The existing
   note IDs, formatting, attachments, source URLs, and desktop-window state remain.
 
-**Not yet implemented:** RTF/RTFD import/export, arbitrary font selection,
-full font-size controls, numbered/bulleted lists, inline PDF page rendering,
-true transparent toplevel windows, multi-monitor placement qualification,
-provider-managed account syncing, automatic browser URL extraction,
-background reminders, or Trash/Archive. The
-translucency toggle changes the paper's opacity, not compositor-wide window
-alpha. Note deletion remains permanent.
+Stage 6 adds (schema v5):
+
+- **Note organization:** All Notes / Pinned / Archive / Trash views, reversible
+  Archive and Trash actions, restore, and permanent deletion only after a second
+  explicit confirmation. Pinned notes sort first in the default list. Note data
+  and attachments survive status changes.
+- **Complete duplication:** An asynchronous managed-attachment copy now includes
+  images and PDFs, retaining original MIME metadata rather than re-guessing the
+  type from private `.asset` filenames. Incomplete copies roll back.
+- **Expanded formatting:** Selectable Sans / Serif / Monospace fonts, seven
+  explicit point sizes, three text colors, three alignment styles, clear
+  selected formatting, literal find/replace, and portable text-based bullets,
+  numbered lists, and checklists. These options use bounded and validated
+  persisted style tokens; they are not an arbitrary font/color chooser or a
+  semantically structured rich-list format.
+- **Desktop options:** Show/Hide All Notes commands, default new-note color
+  preset, optional XDG autostart entry with an explicit UI toggle, and GTK4
+  drag-and-drop of up to sixteen
+  image/PDF files per action. The attachment store retains its existing limits.
+- **Exchange and backups:** Schema v5 stores note `status` and `pinned` fields;
+  Stage 5 local databases and bundles are still supported by the exchange
+  tool. Archived/pinned notes carry their lifecycle flags in v5 bundles. The
+  backup tool accepts both older and v5 databases.
+
+**Not yet implemented / requires a later implementation pass:** Complete
+RTF/RTFD interchange, unrestricted installed-font selection and arbitrary
+point sizes/colors, true semantic editable list objects, inline positioned
+images, inline PDF page rendering, image crop/markup, true translucent top-level
+windows, workspace-sticky controls, automatic browser URL detection, and
+account-managed background synchronization. GNOME Shell and Majoris Image
+runtime integration still require native qualification. PNG/JPEG/RAW/HDR image
+preview remains delegated to compatible **Majoris Image**, not to a second
+renderer. The text-only format and separate attachment panel are unchanged.
 
 ## Supported platforms and integration
 
@@ -136,7 +162,7 @@ alpha. Note deletion remains permanent.
 | --- | --- |
 | Debian 13 / GNOME | Target platform; native runtime not yet qualified |
 | GTK4 / libadwaita | Declarative GTK4 GUI, majoris-themed note paper |
-| SQLite | Local data; schema v4 with transactional migrations |
+| SQLite | Local data; schema v5 with transactional migrations |
 | [Majoris Image](https://github.com/vovechkin02/Majoris-Image) | Optional GTK4 dependency; image file previews only |
 | GNOME Shell | Optional extension; targeted at Shell 48–50, unverified in compositor |
 | Internet / account | Not required |

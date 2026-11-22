@@ -2,7 +2,7 @@ project(
   'majoris-stickies',
   'vala',
   'c',
-  version: '0.5.0',
+  version: '0.6.0',
   meson_version: '>=1.0.0',
   default_options: ['warning_level=2'],
 )
@@ -44,7 +44,7 @@ install_data(
 )
 
 summary({
-  'Stage': '5 — Optional reminders, handwriting, sharing, folder synchronization',
+  'Stage': '6 — Functional completeness and note lifecycle',
   'ImageKit': imagekit_dep.found(),
   'Shell extension installed': get_option('shell_extension'),
   'Storage': 'SQLite, local-first',

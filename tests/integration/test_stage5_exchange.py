@@ -95,7 +95,12 @@ class ExchangeTests(unittest.TestCase):
         self.assertEqual(note["content"], "Résumé / 日本語")
         self.assertEqual(next(iter(assets.values()))[1], b"sample image")
         self.assertEqual(len(digest), 64)
-        self.assertEqual(len(note), 16)
+        self.assertEqual(len(note), 18)
+        self.assertEqual((note["status"], note["pinned"]), (0, 0))
+        with zipfile.ZipFile(output) as archive:
+            import json
+            manifest = json.loads(archive.read("manifest.json"))
+            self.assertEqual(len(manifest["note"]), 16)
 
     def test_import_single_shared_note_preserves_existing_edits(self) -> None:
         """Receive a share once, then keep a conflicting local revision separately."""

@@ -28,3 +28,10 @@ Stage 5 installs majoris-stickies-exchange for explicit single-note sharing and
 app-closed synchronization through a chosen folder. The shared files are
 unencrypted; do not configure a public cloud folder without user consent.
 Reminders require the application to be running; no system service is installed.
+
+Stage 6 adds SQLite v5 note lifecycle fields (status and pinned). Upgrading from
+v4 is transactional. Notes placed in Trash are not physically deleted until the
+user confirms permanent deletion; managed images and PDFs survive archiving.
+The optional XDG autostart desktop entry is created only after an explicit
+user toggle and lives under ~/.config/autostart; package install does not
+activate it on its own.

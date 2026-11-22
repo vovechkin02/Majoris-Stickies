@@ -56,6 +56,7 @@ namespace Stickies {
         private bool is_syncing_view = false;
         private string current_color = "";
         private string last_rendered_formatting = "";
+        private Gtk.Button? pin_button;
         private Gtk.Button? collapse_button;
         private Gtk.Button? float_button;
         private Gtk.Button? translucent_button;
@@ -76,6 +77,7 @@ namespace Stickies {
             create_options_menu ();
             connect_format_buttons ();
             refresh_attachments ();
+            register_attachment_drop ();
 
             title_entry.changed.connect (on_title_changed);
             body_view.buffer.changed.connect (on_body_changed);
@@ -134,6 +136,9 @@ namespace Stickies {
         private void apply_presentation () {
             paper_box.visible = !note.is_collapsed;
             paper_box.opacity = note.is_translucent ? 0.87 : 1.0;
+            if (pin_button != null) {
+                pin_button.label = note.is_pinned ? "Unpin Note" : "Pin Note";
+            }
             if (collapse_button != null) {
                 collapse_button.label = note.is_collapsed ? "Expand Note" : "Collapse Note";
             }
@@ -169,7 +174,23 @@ namespace Stickies {
                 grid.attach (button, index % 2, index / 2, 1, 1);
                 index++;
             }
-            popover.set_child (grid);
+            var layout = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+            layout.append (grid);
+            var default_button = new Gtk.Button.with_label (
+                "Use This Color for New Notes"
+            );
+            default_button.add_css_class ("flat");
+            default_button.clicked.connect (() => {
+                try {
+                    NoteDefaults.set_color (note.color);
+                    save_label.label = "Default color updated";
+                } catch (Error error) {
+                    show_save_failure (error.message);
+                }
+                popover.popdown ();
+            });
+            layout.append (default_button);
+            popover.set_child (layout);
             color_button.popover = popover;
         }
 
@@ -195,6 +216,14 @@ namespace Stickies {
                 popover.popdown ();
             });
             menu.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+            menu_item (menu, "Archive Note", () => {
+                popover.popdown ();
+                owner.change_note_status (note.id, 1);
+            });
+            pin_button = menu_item (menu, note.is_pinned ? "Unpin Note" : "Pin Note", () => {
+                popover.popdown ();
+                owner.toggle_pin (note.id);
+            });
             menu_item (menu, "Copy Note", () => {
                 owner.copy_note (note.id);
                 popover.popdown ();
@@ -212,6 +241,35 @@ namespace Stickies {
                 owner.capture_screenshot (note.id);
             });
             menu.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+            menu_item (menu, "Text Font and Color…", () => {
+                popover.popdown ();
+                choose_text_style ();
+            });
+            menu_item (menu, "Find and Replace…", () => {
+                popover.popdown ();
+                choose_find_replace ();
+            });
+            menu_item (menu, "Bulleted List", () => {
+                TextEditCommands.prefix_lines (body_view.buffer, "bullet");
+                persist_editor_body ();
+                popover.popdown ();
+            });
+            menu_item (menu, "Numbered List", () => {
+                TextEditCommands.prefix_lines (body_view.buffer, "numbered");
+                persist_editor_body ();
+                popover.popdown ();
+            });
+            menu_item (menu, "Checklist", () => {
+                TextEditCommands.prefix_lines (body_view.buffer, "checklist");
+                persist_editor_body ();
+                popover.popdown ();
+            });
+            menu_item (menu, "Clear Selected Formatting", () => {
+                if (TextEditCommands.clear_formatting (body_view.buffer)) {
+                    persist_editor_body ();
+                }
+                popover.popdown ();
+            });
             menu_item (menu, "Draw with Pen…", () => {
                 popover.popdown ();
                 open_ink_editor ();
@@ -239,6 +297,107 @@ namespace Stickies {
             popover.set_child (menu);
             more_button.popover = popover;
             apply_presentation ();
+        }
+
+        /** Presents bounded font, size, color and alignment options for selected text. */
+        private void choose_text_style () {
+            var dialog = new Adw.AlertDialog (
+                "Format Selected Text",
+                "Select a text range before applying formatting."
+            );
+            var builder = new Gtk.Builder.from_resource (
+                "/com/majoris/stickies/text-tools.ui"
+            );
+            var group = (Gtk.Widget) builder.get_object ("format_preferences");
+            var families = (Gtk.DropDown) builder.get_object ("format_family");
+            var sizes = (Gtk.DropDown) builder.get_object ("format_size");
+            var colors = (Gtk.DropDown) builder.get_object ("format_color");
+            var alignments = (Gtk.DropDown) builder.get_object ("format_alignment");
+            families.model = new Gtk.StringList ({ "Sans", "Serif", "Monospace" });
+            sizes.model = new Gtk.StringList ({ "10", "12", "14", "16",
+                "18", "20", "24" });
+            colors.model = new Gtk.StringList ({ "Red", "Blue", "Green" });
+            alignments.model = new Gtk.StringList ({ "Left", "Center", "Right" });
+            dialog.extra_child = group;
+            dialog.add_response ("cancel", "Cancel");
+            dialog.add_response ("family", "Apply Font");
+            dialog.add_response ("size", "Apply Size");
+            dialog.add_response ("color", "Apply Color");
+            dialog.add_response ("alignment", "Apply Alignment");
+            dialog.set_default_response ("cancel");
+            dialog.response.connect ((response) => {
+                string[] family_tokens = {
+                    "font-sans", "font-serif", "font-monospace"
+                };
+                string[] size_tokens = {
+                    "size-10", "size-12", "size-14", "size-16",
+                    "size-18", "size-20", "size-24"
+                };
+                string[] color_tokens = { "text-red", "text-blue", "text-green" };
+                string[] align_tokens = {
+                    "align-left", "align-center", "align-right"
+                };
+                switch (response) {
+                    case "family":
+                        format_selection (family_tokens[(int) families.selected]);
+                        break;
+                    case "size":
+                        format_selection (size_tokens[(int) sizes.selected]);
+                        break;
+                    case "color":
+                        format_selection (color_tokens[(int) colors.selected]);
+                        break;
+                    case "alignment":
+                        format_selection (align_tokens[(int) alignments.selected]);
+                        break;
+                    default:
+                        break;
+                }
+            });
+            dialog.present (this);
+        }
+
+        /** Opens a bounded literal find/replace dialog without regex execution. */
+        private void choose_find_replace () {
+            var dialog = new Adw.AlertDialog ("Find and Replace", null);
+            var builder = new Gtk.Builder.from_resource (
+                "/com/majoris/stickies/text-tools.ui"
+            );
+            dialog.extra_child = (Gtk.Widget) builder.get_object ("find_preferences");
+            var search = (Gtk.Entry) builder.get_object ("find_query");
+            var replacement = (Gtk.Entry) builder.get_object ("find_replacement");
+            dialog.add_response ("close", "Close");
+            dialog.add_response ("next", "Find Next");
+            dialog.add_response ("replace", "Replace Next");
+            dialog.add_response ("all", "Replace All");
+            dialog.set_default_response ("next");
+            dialog.response.connect ((response) => {
+                bool found = false;
+                switch (response) {
+                    case "next":
+                        found = TextEditCommands.find_next (body_view.buffer, search.text);
+                        break;
+                    case "replace":
+                        found = TextEditCommands.replace_next (
+                            body_view.buffer, search.text, replacement.text
+                        );
+                        break;
+                    case "all":
+                        int count = TextEditCommands.replace_all (
+                            body_view.buffer, search.text, replacement.text
+                        );
+                        found = count > 0;
+                        save_label.label = "%d replacements".printf (count);
+                        break;
+                    default:
+                        return;
+                }
+                if (!found) {
+                    save_label.label = "No matching text";
+                }
+                persist_editor_body ();
+            });
+            dialog.present (this);
         }
 
         /** Presents bounded reminder choices in the local time zone. */
@@ -711,6 +870,29 @@ namespace Stickies {
             } catch (Error error) {
                 show_save_failure (error.message);
             }
+        }
+
+        /** Accepts a bounded list of image/PDF files from Files via GTK4 drag-and-drop. */
+        private void register_attachment_drop () {
+            var target = new Gtk.DropTarget (
+                typeof (Gdk.FileList), Gdk.DragAction.COPY
+            );
+            target.drop.connect ((value, x, y) => {
+                var file_list = (Gdk.FileList) value;
+                var dropped = new Gee.ArrayList<GLib.File> ();
+                foreach (var file in file_list.get_files ()) {
+                    dropped.add (file);
+                    if (dropped.size > 16) {
+                        show_save_failure ("Drop at most 16 attachments at once");
+                        return false;
+                    }
+                }
+                foreach (var file in dropped) {
+                    attach_selected.begin (file);
+                }
+                return dropped.size > 0;
+            });
+            attachments_box.add_controller (target);
         }
 
         /** Shows a native plain-text import chooser. */

@@ -16,6 +16,8 @@ namespace Stickies {
         [GtkChild]
         private unowned Gtk.DropDown color_filter;
         [GtkChild]
+        private unowned Gtk.DropDown status_filter;
+        [GtkChild]
         private unowned Gtk.DropDown sort_dropdown;
         [GtkChild]
         private unowned Gtk.ToggleButton list_toggle;
@@ -73,6 +75,10 @@ namespace Stickies {
                 color_names.append (NotePalette.label_for (color));
             }
             color_filter.model = color_names;
+            status_filter.model = new Gtk.StringList ({
+                "All Notes", "Pinned", "Archive", "Trash"
+            });
+            status_filter.notify["selected"].connect ((property) => reset_card_page ());
             sort_dropdown.model = new Gtk.StringList ({
                 "Recently Edited", "Oldest Edited", "Title A–Z", "Color"
             });
@@ -101,6 +107,33 @@ namespace Stickies {
                 });
                 menu.append (button);
             }
+            menu.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+            var show_button = new Gtk.Button.with_label ("Show All Notes");
+            show_button.add_css_class ("flat");
+            show_button.clicked.connect (() => {
+                owner.show_all_note_windows ();
+                popover.popdown ();
+            });
+            menu.append (show_button);
+            var hide_button = new Gtk.Button.with_label ("Hide All Notes");
+            hide_button.add_css_class ("flat");
+            hide_button.clicked.connect (() => {
+                owner.hide_all_note_windows ();
+                popover.popdown ();
+            });
+            menu.append (hide_button);
+            menu.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+            var login_toggle = new Gtk.CheckButton.with_label ("Start Stickies at Login");
+            login_toggle.active = StartupPreferences.is_enabled ();
+            login_toggle.toggled.connect (() => {
+                try {
+                    StartupPreferences.set_enabled (login_toggle.active);
+                } catch (Error error) {
+                    show_message (error.message);
+                    login_toggle.active = StartupPreferences.is_enabled ();
+                }
+            });
+            menu.append (login_toggle);
             popover.set_child (menu);
             arrange_button.popover = popover;
         }
@@ -139,6 +172,15 @@ namespace Stickies {
             notes_flow.remove_all ();
             shown_card_count = 0;
             visible_results = repository.search_notes (search_entry.text);
+            int requested_status = status_filter.selected == 2 ? 1 :
+                (status_filter.selected == 3 ? 2 : 0);
+            for (int index = visible_results.size - 1; index >= 0; index--) {
+                var note = visible_results[index];
+                if (note.status != requested_status ||
+                    (status_filter.selected == 1 && !note.is_pinned)) {
+                    visible_results.remove_at (index);
+                }
+            }
             var colors = NotePalette.all_colors ();
             uint selected_color = color_filter.selected;
             if (selected_color > 0 && selected_color <= (uint) colors.length) {
@@ -169,7 +211,9 @@ namespace Stickies {
             if (visible_results.size == 0 && search_entry.text.strip () != "") {
                 empty_label.label = "No notes match your search.";
             } else {
-                empty_label.label = "No notes yet. Create your first note with the + button.";
+                empty_label.label = status_filter.selected == 2 ? "No archived notes." :
+                    (status_filter.selected == 3 ? "Trash is empty." :
+                    "No notes yet. Create your first note with the + button.");
             }
         }
 
@@ -253,26 +297,58 @@ namespace Stickies {
             content.append (modified_label);
 
             open_button.child = content;
-            open_button.clicked.connect (() => owner.open_note (note.id));
+            open_button.clicked.connect (() => {
+                if (note.status == 0) {
+                    owner.open_note (note.id);
+                } else {
+                    show_message (note.status == 1 ?
+                        "Restore this archived note to open it." :
+                        "Restore this note from Trash to open it.");
+                }
+            });
             card.append (open_button);
 
             var actions = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 5);
+            if (note.is_pinned && note.status == 0) {
+                heading.tooltip_text = "Pinned note";
+            }
             actions.halign = Gtk.Align.END;
-            var copy_button = new Gtk.Button.from_icon_name ("edit-copy-symbolic");
-            copy_button.add_css_class ("flat");
-            copy_button.tooltip_text = "Copy Note to Clipboard";
-            copy_button.clicked.connect (() => owner.copy_note (note.id));
-            actions.append (copy_button);
+            if (note.status == 0) {
+                var pin_button = new Gtk.Button.from_icon_name ("starred-symbolic");
+                pin_button.add_css_class ("flat");
+                pin_button.tooltip_text = note.is_pinned ? "Unpin Note" : "Pin Note";
+                pin_button.clicked.connect (() => owner.toggle_pin (note.id));
+                actions.append (pin_button);
+                var archive_button = new Gtk.Button.from_icon_name ("folder-symbolic");
+                archive_button.add_css_class ("flat");
+                archive_button.tooltip_text = "Archive Note";
+                archive_button.clicked.connect (() => owner.change_note_status (note.id, 1));
+                actions.append (archive_button);
+            } else {
+                var restore_button = new Gtk.Button.from_icon_name ("edit-undo-symbolic");
+                restore_button.add_css_class ("flat");
+                restore_button.tooltip_text = "Restore Note";
+                restore_button.clicked.connect (() => owner.change_note_status (note.id, 0));
+                actions.append (restore_button);
+            }
+            if (note.status != 2) {
+                var copy_button = new Gtk.Button.from_icon_name ("edit-copy-symbolic");
+                copy_button.add_css_class ("flat");
+                copy_button.tooltip_text = "Copy Note to Clipboard";
+                copy_button.clicked.connect (() => owner.copy_note (note.id));
+                actions.append (copy_button);
 
-            var duplicate_button = new Gtk.Button.from_icon_name ("document-duplicate-symbolic");
-            duplicate_button.add_css_class ("flat");
-            duplicate_button.tooltip_text = "Duplicate Note";
-            duplicate_button.clicked.connect (() => owner.duplicate_and_open_note (note.id));
-            actions.append (duplicate_button);
+                var duplicate_button = new Gtk.Button.from_icon_name ("document-duplicate-symbolic");
+                duplicate_button.add_css_class ("flat");
+                duplicate_button.tooltip_text = "Duplicate Note";
+                duplicate_button.clicked.connect (() => owner.duplicate_and_open_note (note.id));
+                actions.append (duplicate_button);
+            }
 
             var delete_button = new Gtk.Button.from_icon_name ("user-trash-symbolic");
             delete_button.add_css_class ("flat");
-            delete_button.tooltip_text = "Delete Note";
+            delete_button.tooltip_text = note.status == 2 ?
+                "Delete Permanently" : "Move Note to Trash";
             delete_button.clicked.connect (() => owner.confirm_delete_note (note.id, this));
             actions.append (delete_button);
             card.append (actions);

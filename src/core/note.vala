@@ -45,6 +45,12 @@ namespace Stickies {
         /** Last successfully scheduled notification time for the current reminder. */
         public int64 reminder_notified_at_us { get; private set; default = 0; }
 
+        /** Lifecycle state: 0 active, 1 archived, 2 in Trash. */
+        public int status { get; private set; default = 0; }
+
+        /** Whether this active note should appear above unpinned notes. */
+        public bool is_pinned { get; private set; default = false; }
+
         /** Validated paper-color token from NotePalette. */
         public string color { get; private set; }
 
@@ -74,13 +80,17 @@ namespace Stickies {
             bool is_visible = false,
             string source_url = "",
             int64 remind_at_us = 0,
-            int64 reminder_notified_at_us = 0
+            int64 reminder_notified_at_us = 0,
+            int status = 0,
+            bool is_pinned = false
         ) {
             Object ();
             this.id = id;
             this.title = title;
             this.content = content;
             this.color = NotePalette.is_valid (color) ? color : NotePalette.DEFAULT_COLOR;
+            this.status = status >= 0 && status <= 2 ? status : 0;
+            this.is_pinned = is_pinned;
             this.created_at_us = created_at_us;
             this.updated_at_us = updated_at_us;
             this.formatting = NoteFormatting.is_valid (content, formatting) ? formatting : "";
@@ -99,6 +109,26 @@ namespace Stickies {
                 warning ("Ignoring an invalid stored source URL: %s", error.message);
                 this.source_url = "";
             }
+        }
+
+        /** Moves a note through the active, archived, and Trash lifecycle. */
+        internal bool update_status (int value) {
+            if (value < 0 || value > 2 || status == value) {
+                return false;
+            }
+            status = value;
+            touch ();
+            return true;
+        }
+
+        /** Changes a note's priority without modifying its contents. */
+        internal bool update_pinned (bool value) {
+            if (is_pinned == value) {
+                return false;
+            }
+            is_pinned = value;
+            touch ();
+            return true;
         }
 
         /** Applies a validated origin without corrupting the existing note. */

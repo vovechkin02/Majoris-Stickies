@@ -10,7 +10,11 @@ namespace Stickies {
         private static string[] styles () {
             return {
                 "bold", "italic", "underline", "strikethrough",
-                "monospace", "large", "small"
+                "monospace", "large", "small",
+                "font-sans", "font-serif", "font-monospace",
+                "size-10", "size-12", "size-14", "size-16", "size-18", "size-20",
+                "size-24", "text-red", "text-blue", "text-green",
+                "align-left", "align-center", "align-right"
             };
         }
 
@@ -43,6 +47,29 @@ namespace Stickies {
             var small = new Gtk.TextTag ("small");
             small.scale = 0.85;
             buffer.tag_table.add (small);
+            foreach (var family in new string[] { "sans", "serif", "monospace" }) {
+                var tag = new Gtk.TextTag ("font-" + family);
+                tag.family = family == "sans" ? "Sans" :
+                    (family == "serif" ? "Serif" : "Monospace");
+                buffer.tag_table.add (tag);
+            }
+            foreach (int point_size in new int[] { 10, 12, 14, 16, 18, 20, 24 }) {
+                var tag = new Gtk.TextTag ("size-%d".printf (point_size));
+                tag.size_points = (double) point_size;
+                buffer.tag_table.add (tag);
+            }
+            foreach (var color in new string[] { "red", "blue", "green" }) {
+                var tag = new Gtk.TextTag ("text-" + color);
+                tag.foreground = color;
+                buffer.tag_table.add (tag);
+            }
+            foreach (var alignment in new string[] { "left", "center", "right" }) {
+                var tag = new Gtk.TextTag ("align-" + alignment);
+                tag.justification = alignment == "left" ? Gtk.Justification.LEFT :
+                    (alignment == "center" ? Gtk.Justification.CENTER :
+                    Gtk.Justification.RIGHT);
+                buffer.tag_table.add (tag);
+            }
             buffer.enable_undo = true;
         }
 
@@ -79,23 +106,26 @@ namespace Stickies {
                 if (tag == null) {
                     continue;
                 }
-                Gtk.TextIter iter;
-                buffer.get_start_iter (out iter);
-                int start = -1;
-                int offset = 0;
-                while (!iter.is_end ()) {
-                    var active = iter.has_tag (tag);
-                    if (active && start < 0) {
-                        start = offset;
-                    } else if (!active && start >= 0) {
-                        NoteFormatting.append_span (result, start, offset, style);
-                        start = -1;
+                Gtk.TextIter position;
+                buffer.get_start_iter (out position);
+                int start = position.has_tag (tag) ? 0 : -1;
+                while (!position.is_end ()) {
+                    var next = position;
+                    if (!next.forward_to_tag_toggle (tag)) {
+                        next.forward_to_end ();
                     }
-                    iter.forward_char ();
-                    offset++;
-                }
-                if (start >= 0) {
-                    NoteFormatting.append_span (result, start, offset, style);
+                    if (next.get_offset () == position.get_offset ()) {
+                        break;
+                    }
+                    if (start >= 0) {
+                        NoteFormatting.append_span (
+                            result, start, next.get_offset (), style
+                        );
+                        start = -1;
+                    } else if (!next.is_end () && next.has_tag (tag)) {
+                        start = next.get_offset ();
+                    }
+                    position = next;
                 }
             }
             return result.str;

@@ -247,3 +247,44 @@ untrusted executable paths. Shared files are input data only, with bounded
 sizes and validated UUIDs. The user must explicitly close the application
 before any other process imports updates into the SQLite database. Developer
 native build and GNOME Shell runtime qualification remain outstanding.
+
+## Stage 6: note organization and editor commands (0.6.0)
+
+SQLite v5 migrates existing v4 notes in a transaction, adding `status` with
+0=active, 1=archived, 2=trashed, and `pinned` with 0/1 semantics. These fields
+are deliberately not coupled to window visibility. Archive, Trash and Restore
+preserve UUIDs, attachments, rich text, reminders, and source URLs. A distinct
+confirmed permanent-delete action removes the row and its managed attachment
+references. The manager shows explicit lifecycle filters.
+
+`NoteRepository.duplicate_complete()` copies managed attachments with GIO
+asynchronous file I/O; the private `.asset` suffix must not be used to infer
+media type. The existing repository metadata is the source of truth. Error
+handling rolls back the incomplete duplicate instead of silently returning a
+text-only copy. `duplicate_note()` remains for compatibility with existing
+internal callers; UI duplication uses `duplicate_complete()`.
+
+`TextEditCommands` owns GTK buffer editing (text lists, find/replace, clearing
+selected tags). `RichTextCodec` owns style tags and serialization, preserving
+the domain/editor boundary and avoiding a second formatting model. Its tag
+iteration now advances between tag boundaries instead of scanning all
+characters for every tag. Vala and GTK build/runtime qualification remains
+necessary to establish this performance improvement on the target platform.
+
+`StartupPreferences` manages a single user-approved XDG autostart entry and
+refuses to overwrite unknown or symbolic-link files. It never creates a system
+service or starts network synchronization. GTK4 file drag-and-drop delegates
+all file size/MIME validation to `NoteRepository.attach_file()`.
+
+The Stage 5 single-note exchange format remains compatible for ordinary active,
+unpinned notes. Stage 6 extends the same versioned manifest with optional v5
+lifecycle fields only when a note is archived, trashed or pinned; old manifests
+are normalized to status=active and pinned=false on import. Older applications
+cannot interpret v5 lifecycle flags, which is why the exchange tool rejects
+unsupported states when importing into a v4 database.
+
+**Unimplemented parity:** RTF/RTFD, inline image layout and PDF page rendering,
+compositor-wide transparency, all-workspace sticky windows, custom colors and
+unrestricted fonts remain out of scope for this actual implementation. This
+repository must not be represented as fully parity-complete before those
+features and native qualification are delivered.
