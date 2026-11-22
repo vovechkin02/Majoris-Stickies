@@ -19,10 +19,11 @@ Rules-Requires-Root: no
 Package: majoris-stickies
 Architecture: any
 Depends: ${misc:Depends}, ${shlibs:Depends}, python3
-Recommends: xdg-desktop-portal-gnome, gnome-shell-extension-majoris-stickies
+Recommends: xdg-desktop-portal-gnome, gnome-shell-extension-majoris-stickies,
+            poppler-utils
 Description: Native desktop sticky notes for Majoris OS
  Stickies provides local-first colored desktop notes, rich-text editing,
- screenshot capture, reminders, handwriting, RTF and HTML export, sharing,
+ screenshot capture, reminders, handwriting, RTF import/export and HTML sharing,
  Archive/Trash, pinned notes, optional folder sync and offline backups.
 
 Package: gnome-shell-extension-majoris-stickies

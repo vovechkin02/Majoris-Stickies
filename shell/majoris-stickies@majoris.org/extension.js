@@ -20,6 +20,11 @@ const INTERFACE_XML = `
       <arg type="u" name="windowId" direction="in"/>
       <arg type="b" name="enabled" direction="in"/>
     </method>
+    <method name="ToggleSticky">
+      <arg type="u" name="windowId" direction="in"/>
+      <arg type="b" name="enabled" direction="out"/>
+    </method>
+    <method name="RestoreLayout"/>
     <method name="Arrange">
       <arg type="s" name="mode" direction="in"/>
       <arg type="s" name="windowIds" direction="in"/>
@@ -171,6 +176,7 @@ export default class StickiesExtension extends Extension {
         this._layouts[tracked.noteId] = {
             x: rect.x, y: rect.y, width: rect.width, height: rect.height,
             monitorArea: area ?? null,
+            sticky: this._layouts[tracked.noteId]?.sticky === true,
         };
         this._queueSave();
     }
@@ -200,6 +206,9 @@ export default class StickiesExtension extends Extension {
             }
             if (registration.floating) {
                 window.make_above();
+            }
+            if (saved?.sticky === true) {
+                window.stick();
             }
             const signals = [
                 window.connect('position-changed', () => this._recordPosition(windowId)),
@@ -240,6 +249,43 @@ export default class StickiesExtension extends Extension {
             window.unmake_above();
         }
         this._registered.get(windowId).floating = enabled;
+    }
+
+    /** Toggle workspace visibility without exposing a non-Stickies window. */
+    ToggleSticky(windowId) {
+        const window = this._findWindow(windowId);
+        const registration = this._registered.get(windowId);
+        if (!window || !registration) {
+            throw new Error('Stickies note window has not been registered');
+        }
+        const saved = this._layouts[registration.noteId] ?? {};
+        const enabled = saved.sticky !== true;
+        if (enabled) {
+            window.stick();
+        } else {
+            window.unstick();
+        }
+        this._layouts[registration.noteId] = {...saved, sticky: enabled};
+        this._queueSave();
+        return enabled;
+    }
+
+    /** Restore saved positions for currently tracked notes, monitor by monitor. */
+    RestoreLayout() {
+        const areas = this._workAreas();
+        for (const tracked of this._tracked.values()) {
+            const saved = this._layouts[tracked.noteId];
+            if (!validRectangle(saved)) {
+                continue;
+            }
+            const area = chooseWorkArea(saved, areas, tracked.window.get_monitor());
+            const rect = area ? clampRect(saved, area) : null;
+            if (rect) {
+                tracked.window.move_resize_frame(
+                    true, rect.x, rect.y, rect.width, rect.height
+                );
+            }
+        }
     }
 
     /** Tiles or cascades only validated Stickies windows in caller order. */

@@ -59,6 +59,13 @@
       </object>
     </child>
     <child>
+      <object class="GtkCheckButton" id="find_case_sensitive">
+        <property name="label">Match Case</property>
+        <property name="active">True</property>
+        <accessibility><property name="label">Match case exactly</property></accessibility>
+      </object>
+    </child>
+    <child>
       <object class="GtkEntry" id="find_replacement">
         <property name="placeholder-text">Replace with</property>
         <accessibility><property name="label">Replacement text</property></accessibility>

@@ -46,6 +46,30 @@ namespace Stickies {
             buffer.end_user_action ();
         }
 
+        /** Toggles the checkbox at the cursor or starts a new checklist item. */
+        public static void toggle_checklist_item (Gtk.TextBuffer buffer) {
+            Gtk.TextIter position;
+            buffer.get_iter_at_mark (out position, buffer.get_insert ());
+            Gtk.TextIter start = position;
+            start.set_line_offset (0);
+            Gtk.TextIter end = start;
+            if (!end.ends_line ()) {
+                end.forward_to_line_end ();
+            }
+            var current = buffer.get_text (start, end, false);
+            buffer.begin_user_action ();
+            if (current.has_prefix ("☐ ") || current.has_prefix ("☑ ")) {
+                var symbol_end = start;
+                symbol_end.forward_char ();
+                var replacement = current.has_prefix ("☐ ") ? "☑" : "☐";
+                buffer.delete (ref start, ref symbol_end);
+                buffer.insert (ref start, replacement, -1);
+            } else {
+                buffer.insert (ref start, "☐ ", -1);
+            }
+            buffer.end_user_action ();
+        }
+
         /** Removes editor tags from a selected range without discarding text. */
         public static bool clear_formatting (Gtk.TextBuffer buffer) {
             Gtk.TextIter start;
@@ -60,21 +84,25 @@ namespace Stickies {
         }
 
         /** Finds the next literal, case-sensitive match, wrapping to the start. */
-        public static bool find_next (Gtk.TextBuffer buffer, string query) {
+        public static bool find_next (
+            Gtk.TextBuffer buffer, string query, bool case_sensitive = true
+        ) {
             if (query == "" || query.char_count () > 1024) {
                 return false;
             }
+            var flags = case_sensitive ? Gtk.TextSearchFlags.TEXT_ONLY :
+                Gtk.TextSearchFlags.TEXT_ONLY | Gtk.TextSearchFlags.CASE_INSENSITIVE;
             Gtk.TextIter start;
             Gtk.TextIter finish;
             Gtk.TextIter match_start;
             Gtk.TextIter match_end;
             buffer.get_selection_bounds (out start, out finish);
             if (!finish.forward_search (
-                query, Gtk.TextSearchFlags.TEXT_ONLY, out match_start, out match_end, null
+                query, flags, out match_start, out match_end, null
             )) {
                 buffer.get_start_iter (out finish);
                 if (!finish.forward_search (
-                    query, Gtk.TextSearchFlags.TEXT_ONLY,
+                    query, flags,
                     out match_start, out match_end, null
                 )) {
                     return false;
@@ -88,7 +116,8 @@ namespace Stickies {
         public static bool replace_next (
             Gtk.TextBuffer buffer,
             string query,
-            string replacement
+            string replacement,
+            bool case_sensitive = true
         ) {
             if (query == "" || query.char_count () > 1024 ||
                 replacement.char_count () > 4096) {
@@ -97,8 +126,9 @@ namespace Stickies {
             Gtk.TextIter start;
             Gtk.TextIter end;
             if (!buffer.get_selection_bounds (out start, out end) ||
-                buffer.get_text (start, end, false) != query) {
-                if (!find_next (buffer, query)) {
+                (case_sensitive ? buffer.get_text (start, end, false) != query :
+                    buffer.get_text (start, end, false).casefold () != query.casefold ())) {
+                if (!find_next (buffer, query, case_sensitive)) {
                     return false;
                 }
                 buffer.get_selection_bounds (out start, out end);
@@ -114,12 +144,15 @@ namespace Stickies {
         public static int replace_all (
             Gtk.TextBuffer buffer,
             string query,
-            string replacement
+            string replacement,
+            bool case_sensitive = true
         ) {
             if (query == "" || query.char_count () > 1024 ||
                 replacement.char_count () > 4096) {
                 return 0;
             }
+            var flags = case_sensitive ? Gtk.TextSearchFlags.TEXT_ONLY :
+                Gtk.TextSearchFlags.TEXT_ONLY | Gtk.TextSearchFlags.CASE_INSENSITIVE;
             Gtk.TextIter position;
             buffer.get_start_iter (out position);
             int replaced = 0;
@@ -128,7 +161,7 @@ namespace Stickies {
                 Gtk.TextIter start;
                 Gtk.TextIter end;
                 if (!position.forward_search (
-                    query, Gtk.TextSearchFlags.TEXT_ONLY, out start, out end, null
+                    query, flags, out start, out end, null
                 )) {
                     break;
                 }

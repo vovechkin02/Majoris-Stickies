@@ -16,7 +16,7 @@ jobs:
             ca-certificates git build-essential meson ninja-build valac python3 \
             debhelper dpkg-dev pkgconf xvfb xauth dbus-x11 \
             libglib2.0-dev libgee-0.8-dev libgtk-4-dev libadwaita-1-dev \
-            libsqlite3-dev nodejs
+            libsqlite3-dev nodejs poppler-utils
       - name: Check out source
         uses: actions/checkout@v4
       - name: Configure
@@ -40,3 +40,4 @@ jobs:
           node --check shell/majoris-stickies@majoris.org/extension.js
           node --experimental-default-type=module tests/integration/test_layout.mjs
           python3 -m unittest discover -s tests/integration -p 'test_stage7_*.py'
+          python3 -m unittest discover -s tests/integration -p 'test_stage8_*.py'

@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""Import a bounded, text-only RTF subset into Majoris Stickies formatting.
+
+No RTF objects, hyperlinks, field instructions, external resources, attachments,
+macros, or embedded data are evaluated. Unsupported metadata destinations are
+skipped; the original file is never modified. Imported body text is not a
+lossless representation of RTF documents with unsupported constructs.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import stat
+import sys
+from pathlib import Path
+
+MAX_INPUT_BYTES = 16 * 1024 * 1024
+MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+MAX_SPANS = 20_000
+MAX_DEPTH = 64
+MAX_CONTROL_LENGTH = 48
+TRANSFER_SEPARATOR = "\x1e"
+SKIPPED_DESTINATIONS = frozenset(
+    {
+        "fonttbl", "colortbl", "stylesheet", "info", "pict", "object",
+        "header", "footer", "headerl", "headerr", "footerl", "footerr",
+        "generator", "listtable", "listoverridetable", "revtbl", "xmlnstbl",
+        "datastore", "themedata", "colorschememapping", "fldinst",
+    }
+)
+STYLE_GROUPS = {
+    "bold": {"bold"},
+    "italic": {"italic"},
+    "underline": {"underline"},
+    "strikethrough": {"strikethrough"},
+    "family": {"font-sans", "font-serif", "font-monospace"},
+    "alignment": {"align-left", "align-center", "align-right"},
+    "color": {"text-red", "text-blue", "text-green"},
+    "size": {f"size-{point}" for point in (10, 12, 14, 16, 18, 20, 24)},
+}
+
+
+class RtfImportError(ValueError):
+    """Indicate that an RTF file cannot safely be converted."""
+
+
+class RtfReader:
+    """Parse a finite RTF text stream and produce stable Unicode style spans."""
+
+    def __init__(self) -> None:
+        """Allocate bounded per-document parser state."""
+        self.chars: list[str] = []
+        self.styles: set[str] = set()
+        self.starts: dict[str, int] = {}
+        self.spans: list[tuple[int, int, str]] = []
+        self.stack: list[tuple[set[str], bool, int]] = []
+        self.hidden = False
+        self.uc = 1
+        self.fallback = 0
+        self.pending_high: int | None = None
+        self.output_bytes = 0
+
+    def _set_style(self, group: str, style: str | None) -> None:
+        """Keep one active style per mutually exclusive formatting group."""
+        self.styles.difference_update(STYLE_GROUPS[group])
+        if style is not None:
+            self.styles.add(style)
+
+    def _append(self, char: str) -> None:
+        """Emit one visible code point and record transitions at its offset."""
+        if char == TRANSFER_SEPARATOR or char == "\x00":
+            raise RtfImportError("RTF contains an unsupported control character")
+        new_bytes = len(char.encode("utf-8"))
+        if self.output_bytes + new_bytes > MAX_OUTPUT_BYTES:
+            raise RtfImportError("RTF text exceeds 2 MiB")
+        offset = len(self.chars)
+        for style in self.starts.keys() - self.styles:
+            self.spans.append((self.starts.pop(style), offset, style))
+        for style in self.styles - self.starts.keys():
+            self.starts[style] = offset
+        if len(self.spans) > MAX_SPANS:
+            raise RtfImportError("RTF contains too many formatting intervals")
+        self.chars.append(char)
+        self.output_bytes += new_bytes
+
+    def _flush_high(self) -> None:
+        """Replace an unpaired UTF-16 high surrogate with U+FFFD."""
+        if self.pending_high is not None:
+            self.pending_high = None
+            self._append("\ufffd")
+
+    def _emit(self, char: str) -> None:
+        """Apply RTF Unicode fallback handling to ordinary visible text."""
+        if self.hidden:
+            return
+        if self.fallback:
+            self.fallback -= 1
+            return
+        self._flush_high()
+        self._append(char)
+
+    def _emit_unicode(self, signed_unit: int) -> None:
+        """Decode signed UTF-16 RTF units, including surrogate pairs."""
+        if self.hidden:
+            return
+        code = signed_unit & 0xFFFF
+        if 0xDC00 <= code <= 0xDFFF and self.pending_high is not None:
+            codepoint = 0x10000 + ((self.pending_high - 0xD800) << 10) + code - 0xDC00
+            self.pending_high = None
+            self._append(chr(codepoint))
+        else:
+            self._flush_high()
+            if 0xD800 <= code <= 0xDBFF:
+                self.pending_high = code
+            elif 0xDC00 <= code <= 0xDFFF:
+                self._append("\ufffd")
+            else:
+                self._append(chr(code))
+        self.fallback = self.uc
+
+    def _control(self, word: str, value: int | None) -> None:
+        """Interpret only bounded, non-executable text-formatting controls."""
+        if word == "bin":
+            raise RtfImportError("Binary RTF objects are not supported")
+        if word in SKIPPED_DESTINATIONS:
+            self.hidden = True
+        if self.hidden:
+            return
+        if word in ("par", "line"):
+            self._emit("\n")
+        elif word == "tab":
+            self._emit("\t")
+        elif word == "u" and value is not None:
+            self._emit_unicode(value)
+        elif word == "uc" and value is not None:
+            self.uc = max(0, min(value, 4))
+        elif word in ("b", "i", "ul", "strike"):
+            group, style = {
+                "b": ("bold", "bold"), "i": ("italic", "italic"),
+                "ul": ("underline", "underline"),
+                "strike": ("strikethrough", "strikethrough"),
+            }[word]
+            self._set_style(group, style if value != 0 else None)
+        elif word in ("ulnone", "ul0"):
+            self._set_style("underline", None)
+        elif word == "f" and value is not None:
+            families = {0: "font-sans", 1: "font-serif", 2: "font-monospace"}
+            self._set_style("family", families.get(value))
+        elif word == "fs" and value is not None:
+            candidate = f"size-{value // 2}" if value % 2 == 0 else None
+            selected = candidate if candidate in STYLE_GROUPS["size"] else None
+            self._set_style("size", selected)
+        elif word == "cf" and value is not None:
+            colors = {1: "text-red", 2: "text-blue", 3: "text-green"}
+            self._set_style("color", colors.get(value))
+        elif word in ("ql", "qc", "qr", "qj"):
+            self._set_style("alignment", {
+                "ql": "align-left", "qc": "align-center", "qr": "align-right",
+            }.get(word))
+        elif word == "plain":
+            self.styles.clear()
+        elif word == "pard":
+            self._set_style("alignment", None)
+
+    def parse(self, data: bytes) -> tuple[str, str]:
+        """Convert an RTF document to plain text and app-owned style intervals."""
+        if len(data) > MAX_INPUT_BYTES or not data.lstrip().startswith(b"{\\rtf1"):
+            raise RtfImportError("Expected an RTF 1 document of at most 16 MiB")
+        if b"\x00" in data:
+            raise RtfImportError("RTF contains NUL bytes")
+        source = data.decode("latin-1")
+        index = 0
+        optional_destination = False
+        while index < len(source):
+            char = source[index]
+            if not self.stack and char not in "{\r\n \t":
+                raise RtfImportError("RTF contains data outside the root group")
+            if char == "{":
+                if len(self.stack) >= MAX_DEPTH:
+                    raise RtfImportError("RTF group depth exceeds 64")
+                self.stack.append((set(self.styles), self.hidden, self.uc))
+                optional_destination = False
+                index += 1
+            elif char == "}":
+                if not self.stack:
+                    raise RtfImportError("RTF contains an unmatched group terminator")
+                self._flush_high()
+                self.styles, self.hidden, self.uc = self.stack.pop()
+                optional_destination = False
+                index += 1
+            elif char == "\\":
+                index += 1
+                if index >= len(source):
+                    raise RtfImportError("RTF ends with an incomplete escape")
+                symbol = source[index]
+                if symbol in "{}\\":
+                    self._emit(symbol)
+                    index += 1
+                elif symbol == "'":
+                    if index + 2 >= len(source):
+                        raise RtfImportError("RTF hex escape is incomplete")
+                    try:
+                        byte = int(source[index + 1:index + 3], 16)
+                    except ValueError as error:
+                        raise RtfImportError("RTF hex escape is invalid") from error
+                    self._emit(bytes([byte]).decode("cp1252", errors="replace"))
+                    index += 3
+                elif symbol == "*":
+                    optional_destination = True
+                    index += 1
+                elif symbol in "~-_":
+                    self._emit({"~": "\u00a0", "-": "\u00ad", "_": "\u2011"}[symbol])
+                    index += 1
+                elif symbol.isalpha() and symbol.isascii():
+                    start = index
+                    while (
+                        index < len(source)
+                        and source[index].isascii()
+                        and source[index].isalpha()
+                    ):
+                        index += 1
+                        if index - start > MAX_CONTROL_LENGTH:
+                            raise RtfImportError("RTF control word is too long")
+                    word = source[start:index]
+                    sign = 1
+                    if index < len(source) and source[index] == "-":
+                        sign = -1
+                        index += 1
+                    number_start = index
+                    while (
+                        index < len(source)
+                        and source[index].isascii()
+                        and source[index].isdigit()
+                    ):
+                        index += 1
+                        if index - number_start > 10:
+                            raise RtfImportError("RTF control number is too large")
+                    value = (
+                        int(source[number_start:index]) * sign
+                        if index > number_start else None
+                    )
+                    if index < len(source) and source[index] == " ":
+                        index += 1
+                    if optional_destination:
+                        self.hidden = True
+                        optional_destination = False
+                    self._control(word, value)
+                else:
+                    index += 1
+            elif char in "\r\n":
+                index += 1
+            else:
+                displayed = (
+                    char if ord(char) < 128
+                    else bytes([ord(char)]).decode("cp1252", errors="replace")
+                )
+                self._emit(displayed)
+                index += 1
+        if self.stack:
+            raise RtfImportError("RTF document has unmatched groups")
+        self._flush_high()
+        for style, start in self.starts.items():
+            self.spans.append((start, len(self.chars), style))
+        if len(self.spans) > MAX_SPANS:
+            raise RtfImportError("RTF contains too many formatting intervals")
+        text = "".join(self.chars)
+        formatting = "".join(
+            f"{start}:{end}:{style}\n" for start, end, style in sorted(self.spans)
+            if start < end
+        )
+        if len(formatting.encode("utf-8")) > 1024 * 1024:
+            raise RtfImportError("RTF formatting exceeds 1 MiB")
+        return text, formatting
+
+
+def import_rtf(path: Path) -> tuple[str, str]:
+    """Read only local regular files within the configured size limit."""
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise RtfImportError("Cannot open local RTF input") from error
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_INPUT_BYTES:
+            raise RtfImportError("Only regular RTF files up to 16 MiB are supported")
+        with os.fdopen(descriptor, "rb", closefd=False) as source:
+            data = source.read(MAX_INPUT_BYTES + 1)
+    finally:
+        os.close(descriptor)
+    return RtfReader().parse(data)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Return text and formatting through a private subprocess-only separator."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", type=Path, help="Local RTF document")
+    args = parser.parse_args(argv)
+    try:
+        text, formatting = import_rtf(args.source)
+        payload = (text + TRANSFER_SEPARATOR + formatting).encode("utf-8")
+        sys.stdout.buffer.write(payload)
+    except (OSError, RtfImportError, UnicodeError) as error:
+        print(f"RTF import failed: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

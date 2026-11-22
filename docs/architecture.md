@@ -308,3 +308,33 @@ features and native qualification are delivered.
   an Xvfb activation smoke run, and binary package construction. Failure of any
   gate must prevent tagging a build-qualified release. The GNOME Shell and
   native HDR/Wayland/ImageKit runtime paths require a target desktop session.
+
+## Stage 8: bounded interchange, previews, and compositor operations (0.8.0)
+
+- `RtfImporter` is an asynchronous adapter to an installed, self-limiting Python
+  parser. It returns plain UTF-8 and existing `start:end:style` spans only; the
+  user explicitly chooses whether to replace a note's editor body. The helper
+  does not read SQLite or execute RTF fields. This is not a general RTFD reader.
+- `PdfPreviewService` is an asynchronous adapter for the optional first-page
+  Poppler helper. The helper checks the managed input PDF, executes `pdftoppm`
+  with `subprocess.run` (no shell, 12-second timeout), and returns a bounded PNG
+  in a private directory. The Vala service validates the output, then
+  `ImageKit.ImageView` displays it. Poppler decodes *PDF pages*, not ordinary
+  image files. The note window owns temp-file cleanup on normal close.
+  If Majoris Image is unavailable, the attachment remains accessible externally.
+- `RichTextCodec` is still the single formatting-span bridge; `TextEditCommands`
+  owns checkbox-prefix toggles and case-sensitive/insensitive literal search.
+  No new persistence tags or database schema version have been introduced.
+- `StickiesApp` enforces a finite number of visible note windows (64), matching
+  the existing GNOME Shell extension's registration cap. The optional extension
+  implements `ToggleSticky` and `RestoreLayout`; all-workspace state is kept
+  in the compositor's existing private layout JSON without an unsupported
+  GTK window positioning/stacking API.
+- Lifecycle and GoF review: the RTF and PDF helpers are boundary adapters, not
+  new data repositories, Factory classes, or polymorphic Strategy families.
+  Gtk/GObject events remain the Observer mechanism; the temporary PDF output is
+  owned by the note window and removed when that window closes normally.
+
+The source is *not* certified to compile or run in this environment. Refer to
+`docs/stage-8-qualification.md` for release-gate tests and outstanding feature
+parity items.

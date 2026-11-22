@@ -6,6 +6,7 @@ namespace Stickies {
      * It does not implement SQL operations or editor-widget behavior.
      */
     public class StickiesApp : Adw.Application {
+        private const int MAX_DESKTOP_NOTE_WINDOWS = 64;
         private NoteRepository? repository;
         private ManagerWindow? manager_window;
         private Gee.HashMap<string, NoteWindow> note_windows;
@@ -99,9 +100,18 @@ namespace Stickies {
                 windows_restored = true;
                 var store = repository;
                 if (store != null) {
+                    int restored_count = 0;
                     foreach (var note in store.list_notes ()) {
                         if (note.is_visible && note.status == 0) {
+                            if (restored_count >= MAX_DESKTOP_NOTE_WINDOWS) {
+                                manager_window?.show_message (
+                                    "Additional notes remain in the manager; " +
+                                    "at most 64 note windows can be displayed"
+                                );
+                                break;
+                            }
                             open_note (note.id);
+                            restored_count++;
                         }
                     }
                 }
@@ -175,6 +185,14 @@ namespace Stickies {
                 return;
             }
 
+            if (note_windows.size >= MAX_DESKTOP_NOTE_WINDOWS) {
+                report_operation_error (
+                    "Too many open notes",
+                    "Close a desktop note window before creating another. " +
+                    "All saved notes remain available in the manager."
+                );
+                return;
+            }
             try {
                 var note = store.create_note ();
                 var color = NoteDefaults.get_color ();
@@ -316,6 +334,13 @@ namespace Stickies {
                 existing.present ();
                 return;
             }
+            if (note_windows.size >= MAX_DESKTOP_NOTE_WINDOWS) {
+                report_operation_error (
+                    "Desktop note limit reached",
+                    "Close one of the 64 open notes. The manager can still access all notes."
+                );
+                return;
+            }
 
             store.set_presentation (
                 id, note.is_collapsed, note.is_floating, note.is_translucent,
@@ -417,9 +442,17 @@ namespace Stickies {
                 return;
             }
             foreach (var note in store.list_notes ()) {
-                if (note.status == 0) {
-                    open_note (note.id);
+                if (note.status != 0) {
+                    continue;
                 }
+                if (note_windows.size >= MAX_DESKTOP_NOTE_WINDOWS) {
+                    manager_window?.show_message (
+                        "Up to 64 desktop notes can be shown together; " +
+                        "remaining notes are available in the manager"
+                    );
+                    break;
+                }
+                open_note (note.id);
             }
         }
 
@@ -459,6 +492,45 @@ namespace Stickies {
                 yield shell_bridge.register_window (window, note.id, note.is_floating);
             } catch (Error error) {
                 debug ("Optional Stickies shell integration unavailable: %s", error.message);
+            }
+        }
+
+        /** Requests compositor-managed visibility across GNOME workspaces. */
+        public void toggle_workspace_visibility (NoteWindow window) {
+            toggle_workspace_visibility_async.begin (window);
+        }
+
+        /** Uses the Shell extension as the sole owner of persisted sticky state. */
+        private async void toggle_workspace_visibility_async (NoteWindow window) {
+            var store = repository;
+            var note = store != null ? store.find_note (window.note_id ()) : null;
+            if (note == null) {
+                return;
+            }
+            try {
+                yield shell_bridge.register_window (window, note.id, note.is_floating);
+                var enabled = yield shell_bridge.toggle_sticky (window);
+                window.show_status (enabled ? "Shown on all workspaces" :
+                    "Shown on current workspace");
+            } catch (Error error) {
+                window.show_save_failure (
+                    "GNOME Shell workspace integration unavailable: " + error.message
+                );
+            }
+        }
+
+        /** Restores compositor-saved positions for visible desktop notes. */
+        public void restore_note_layout () {
+            restore_note_layout_async.begin ();
+        }
+
+        /** Keeps note layout restoration separate from SQLite presentation state. */
+        private async void restore_note_layout_async () {
+            try {
+                yield shell_bridge.restore_layout ();
+                manager_window?.show_message ("Restored saved desktop positions");
+            } catch (Error error) {
+                report_operation_error ("Unable to restore note layout", error.message);
             }
         }
 

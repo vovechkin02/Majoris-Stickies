@@ -38,6 +38,25 @@ namespace Stickies {
             yield invoke ("Arrange", new GLib.Variant ("(ss)", mode, window_ids));
         }
 
+        /** Toggles compositor-owned all-workspace visibility for one note. */
+        public async bool toggle_sticky (Gtk.ApplicationWindow window) throws Error {
+            var connection = yield GLib.Bus.get (GLib.BusType.SESSION, null);
+            var reply = yield connection.call (
+                "org.gnome.Shell", OBJECT_PATH, INTERFACE, "ToggleSticky",
+                new GLib.Variant ("(u)", (uint) window.get_id ()),
+                new GLib.VariantType ("(b)"),
+                GLib.DBusCallFlags.NONE, TIMEOUT_MS, null
+            );
+            bool enabled;
+            reply.get ("(b)", out enabled);
+            return enabled;
+        }
+
+        /** Reapplies saved compositor rectangles to currently registered notes. */
+        public async void restore_layout () throws Error {
+            yield invoke ("RestoreLayout", new GLib.Variant ("()"));
+        }
+
         /** Executes a typed method on the optional GNOME Shell D-Bus endpoint. */
         private async void invoke (string method, GLib.Variant arguments) throws Error {
             var connection = yield GLib.Bus.get (GLib.BusType.SESSION, null);

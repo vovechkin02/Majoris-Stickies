@@ -1,0 +1,68 @@
+namespace Stickies {
+    /**
+     * Delegates optional first-page PDF rasterization to the bounded Poppler
+     * helper and returns a temporary PNG solely for ImageKit consumption.
+     * This service never tries to decode a PDF as an ordinary image file.
+     */
+    public class PdfPreviewService : GLib.Object {
+        private const int MAX_PNG_BYTES = 6 * 1024 * 1024;
+
+        /** Produces a temporary, bounded first-page preview off the GTK thread. */
+        public static async GLib.File render_first_page (
+            GLib.File pdf,
+            GLib.Cancellable? cancellable
+        ) throws Error {
+            var path = pdf.get_path ();
+            if (path == null) {
+                throw new IOError.NOT_SUPPORTED ("PDF previews require a local attachment");
+            }
+            string[] argv = { "majoris-stickies-pdf-preview", path };
+            var process = new GLib.Subprocess.newv (
+                argv, GLib.SubprocessFlags.STDOUT_PIPE | GLib.SubprocessFlags.STDERR_PIPE
+            );
+            string? output = null;
+            string? diagnostic = null;
+            yield process.communicate_utf8_async (
+                null, cancellable, out output, out diagnostic
+            );
+            if (!process.get_successful () || output == null) {
+                throw new IOError.FAILED (
+                    "PDF preview unavailable; install poppler-utils or open externally"
+                );
+            }
+            var thumbnail_path = output.strip ();
+            var expected_prefix = GLib.Path.build_filename (
+                GLib.Environment.get_tmp_dir (), "majoris-stickies-pdf-"
+            );
+            if (!thumbnail_path.has_prefix (expected_prefix) ||
+                !thumbnail_path.has_suffix ("/page.png")) {
+                throw new IOError.INVALID_DATA ("Invalid PDF preview output path");
+            }
+            var thumbnail = GLib.File.new_for_path (thumbnail_path);
+            var info = yield thumbnail.query_info_async (
+                "standard::size,standard::type",
+                GLib.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
+                GLib.Priority.DEFAULT,
+                cancellable
+            );
+            if (info.get_file_type () != GLib.FileType.REGULAR ||
+                info.get_size () <= 0 || info.get_size () > MAX_PNG_BYTES) {
+                throw new IOError.INVALID_DATA ("PDF preview is not a bounded regular file");
+            }
+            return thumbnail;
+        }
+
+        /** Releases a temporary PNG and its private directory after display. */
+        public static void delete_preview (GLib.File preview) {
+            try {
+                preview.delete (null);
+                var directory = preview.get_parent ();
+                if (directory != null) {
+                    directory.delete (null);
+                }
+            } catch (Error error) {
+                warning ("Unable to release PDF preview: %s", error.message);
+            }
+        }
+    }
+}

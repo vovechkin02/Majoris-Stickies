@@ -1,3 +1,12 @@
+majoris-stickies (0.8.0-1) unstable; urgency=medium
+
+  * Add bounded text-only RTF import and repeatable find/replace.
+  * Add shell workspace toggling, layout restore, and a 64-note window limit.
+  * Add on-demand ImageKit image previews and optional Poppler PDF first-page previews.
+  * Retain schema v5 and local-first compatibility.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Sun, 22 Nov 2026 15:20:00 +1100
+
 majoris-stickies (0.7.0-1) unstable; urgency=medium
 
   * Add safe Unicode RTF export for active notes without changing schema v5.

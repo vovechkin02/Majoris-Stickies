@@ -18,7 +18,9 @@ gtk_sources = files(
 
 service_sources = files(
   'services/note-defaults.vala',
+  'services/pdf-preview-service.vala',
   'services/rtf-exporter.vala',
+  'services/rtf-importer.vala',
   'services/screenshot-portal.vala',
   'services/shell-window-bridge.vala',
   'services/startup-preferences.vala',

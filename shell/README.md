@@ -39,3 +39,13 @@ are still accepted.
 
 The optional integration is **not qualified solely by Node.js geometry tests**;
 run `docs/stage-4-qualification.md` on the shipping GNOME Shell version.
+
+## Stage 8 workspace and restore commands
+
+`ToggleSticky(u windowId) → b enabled` toggles visibility across GNOME
+workspaces, for registered Stickies windows only. This state is persisted with
+compositor-managed positions in `window-positions.json`. `RestoreLayout()`
+repositions currently registered note windows within the active monitor work
+areas. Neither command is available without the enabled Shell extension, and
+neither pretends to be a GTK4/Wayland client-side window-management feature.
+Maximum concurrently registered note windows: **64** (enforced by the app too).

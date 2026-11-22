@@ -108,6 +108,13 @@ namespace Stickies {
                 menu.append (button);
             }
             menu.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+            var restore_button = new Gtk.Button.with_label ("Restore Saved Layout");
+            restore_button.add_css_class ("flat");
+            restore_button.clicked.connect (() => {
+                owner.restore_note_layout ();
+                popover.popdown ();
+            });
+            menu.append (restore_button);
             var show_button = new Gtk.Button.with_label ("Show All Notes");
             show_button.add_css_class ("flat");
             show_button.clicked.connect (() => {

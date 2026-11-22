@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.7.0 (Stage 7 source implementation; native release gate pending)  
+**Version:** 0.8.0 (Stage 8 source implementation; native release gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -325,6 +325,34 @@ verified copy offline. `sync-state.json` stores last-agreed revision hashes in
 the local note directory; it contains no full note contents. Use each device's
 own data directory, not a shared SQLite database.
 
+### Stage 8: text interchange, desktop controls and lazy previews
+
+- **RTF import:** the `majoris-stickies-rtf-import` helper parses a bounded,
+  text-only RTF subset into UTF-8 and validated application-owned formatting
+  spans. The GTK editor can import that content without writing outside the
+  currently selected note. It preserves supported font, emphasis, size, color,
+  and alignment tokens but skips metadata and unsupported RTF objects.
+  This is *not* lossless RTFD package interchange or general RTF import.
+- **Find and replace:** the repeatable, nonmodal search window supports
+  case-sensitive or case-insensitive literal search, replacement and replace-all.
+  **Checklists** can be toggled with Ctrl+Enter or the note menu. List prefixes
+  remain text; this is not a nested document/list object model.
+- **Desktop windows:** at most 64 independent note windows open simultaneously,
+  consistent with the optional Shell extension. Other notes remain in the
+  manager. The extension adds *Toggle All Workspaces* and *Restore Saved
+  Layout*. All-workspace state lives in the extension's layout JSON, not a new
+  SQLite column; shell-dependent commands fail explicitly without it.
+- **Image previews:** the attachment UI now allocates an `ImageKit.ImageView`
+  only when its preview is expanded. No alternative image decoder was added.
+- **PDF preview:** when the installed Majoris Image component and optional
+  `poppler-utils` are available, expanding a PDF attachment renders just the
+  first page to a size-limited, private PNG via a bounded Poppler subprocess.
+  ImageKit displays that PNG; temporary files are cleaned up on normal close.
+  The PDF itself remains a managed attachment, not an inline editable object.
+- **Compatibility:** existing schema v5, UUIDs, attachment hashes, share bundles,
+  backup/restore formats and original supported GTK styling tokens are unchanged.
+  Native Vala, GNOME Shell and ImageKit qualification is **outstanding**.
+
 ## Data and compatibility
 
 - SQLite database: `$XDG_DATA_HOME/majoris/stickies/notes.db`, defaulting to
@@ -408,7 +436,7 @@ python3 tests/integration/test_resource_layout.py data
 node --check shell/majoris-stickies@majoris.org/extension.js
 node --experimental-default-type=module tests/integration/test_layout.mjs
 python3 -m unittest discover -s tests/recovery -p 'test_*.py'
-python3 -m unittest discover -s tests/integration -p 'test_stage5_exchange.py'
+python3 -m unittest discover -s tests/integration -p 'test_stage*.py'
 python3 tools/check_source_docs.py
 ```
 
@@ -418,6 +446,8 @@ Stage 4 database integrity and large-collection behavior, and Stage 5 reminder
 and schema upgrades. Python tests verify
 UI resources, accessibility annotations, and eight backup/recovery cases, plus nine exchange tests. A
 separate pure-JavaScript suite checks multi-monitor placement geometry.
+Stage 8 additionally exercises the RTF converter, PDF rasterizer and new
+D-Bus/GUI command contracts without claiming native runtime verification.
 
 **For this archive:** resource XML, backup/restore and shell layout tests
 run in the available tools. Meson, Vala unit tests, native GTK rendering,
@@ -426,7 +456,7 @@ been run**: this environment has no Vala/GTK/libadwaita build toolchain.
 Static checks do not establish native compilation or runtime correctness.
 
 Further details and required target-machine checks are recorded in
-[Stage 5 qualification](docs/stage-5-qualification.md). Do not label this
+[Stage 8 qualification](docs/stage-8-qualification.md). Do not label this
 source release as compiled, runtime-qualified or complete macOS parity.
 
 ## Contributing and license
@@ -439,6 +469,6 @@ GPL-3.0-or-later; see [LICENSE](LICENSE). Original source is distributed,
 without bundling third-party binaries, image assets or Majoris Image itself.
 
 Stage-specific changes and required acceptance checks are recorded in
-[Stage 5 qualification](docs/stage-5-qualification.md). Earlier Stage 3
+[Stage 8 qualification](docs/stage-8-qualification.md). Earlier Stage 3
 screenshots and clipboard behavior remain documented in
 [Stage 3 qualification](docs/stage-3-qualification.md).

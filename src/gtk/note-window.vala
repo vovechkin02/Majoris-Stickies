@@ -53,6 +53,7 @@ namespace Stickies {
         private NoteRepository repository;
         private Note note;
         private GLib.Cancellable attachment_cancellable;
+        private Gee.ArrayList<GLib.File> pdf_previews;
         private bool is_syncing_view = false;
         private string current_color = "";
         private string last_rendered_formatting = "";
@@ -60,6 +61,7 @@ namespace Stickies {
         private Gtk.Button? collapse_button;
         private Gtk.Button? float_button;
         private Gtk.Button? translucent_button;
+        private Gtk.Window? find_window;
 
         /** Constructs the independent editor without leaking storage operations into GTK. */
         public NoteWindow (StickiesApp owner, NoteRepository repository, Note note) {
@@ -68,6 +70,7 @@ namespace Stickies {
             this.repository = repository;
             this.note = note;
             attachment_cancellable = new GLib.Cancellable ();
+            pdf_previews = new Gee.ArrayList<GLib.File> ();
             RichTextCodec.prepare (body_view.buffer);
             paper_box.add_css_class ("note-paper");
             set_default_size (note.window_width, note.is_collapsed ? 90 : note.window_height);
@@ -96,6 +99,11 @@ namespace Stickies {
         /** Returns this window's note identity. */
         public string note_id () {
             return note.id;
+        }
+
+        /** Shows user-visible compositor results without implying a storage change. */
+        public void show_status (string message) {
+            save_label.label = message;
         }
 
         /** Shows a save failure without dropping unsaved editor data. */
@@ -211,6 +219,10 @@ namespace Stickies {
                 toggle_floating ();
                 popover.popdown ();
             });
+            menu_item (menu, "Toggle All Workspaces", () => {
+                owner.toggle_workspace_visibility (this);
+                popover.popdown ();
+            });
             translucent_button = menu_item (menu, "Translucent Paper", () => {
                 toggle_translucent ();
                 popover.popdown ();
@@ -264,6 +276,11 @@ namespace Stickies {
                 persist_editor_body ();
                 popover.popdown ();
             });
+            menu_item (menu, "Toggle Checklist Item", () => {
+                TextEditCommands.toggle_checklist_item (body_view.buffer);
+                persist_editor_body ();
+                popover.popdown ();
+            });
             menu_item (menu, "Clear Selected Formatting", () => {
                 if (TextEditCommands.clear_formatting (body_view.buffer)) {
                     persist_editor_body ();
@@ -277,6 +294,10 @@ namespace Stickies {
             menu_item (menu, "Export Formatted HTML…", () => {
                 popover.popdown ();
                 choose_html_export ();
+            });
+            menu_item (menu, "Import Rich Text (RTF)…", () => {
+                popover.popdown ();
+                choose_rtf_import ();
             });
             menu_item (menu, "Export Rich Text (RTF)…", () => {
                 popover.popdown ();
@@ -361,47 +382,73 @@ namespace Stickies {
             dialog.present (this);
         }
 
-        /** Opens a bounded literal find/replace dialog without regex execution. */
+        /** Provides repeatable search/replace without a closing response dialog. */
         private void choose_find_replace () {
-            var dialog = new Adw.AlertDialog ("Find and Replace", null);
+            if (find_window != null) {
+                find_window.present ();
+                return;
+            }
+            var window = new Gtk.Window ();
+            find_window = window;
+            window.close_request.connect (() => {
+                find_window = null;
+                return false;
+            });
+            window.title = "Find and Replace";
+            window.set_transient_for (this);
+            window.set_default_size (390, 220);
+            window.set_resizable (false);
+
             var builder = new Gtk.Builder.from_resource (
                 "/com/majoris/stickies/text-tools.ui"
             );
-            dialog.extra_child = (Gtk.Widget) builder.get_object ("find_preferences");
+            var layout = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+            layout.margin_top = 12;
+            layout.margin_bottom = 12;
+            layout.margin_start = 12;
+            layout.margin_end = 12;
+            layout.append ((Gtk.Widget) builder.get_object ("find_preferences"));
             var search = (Gtk.Entry) builder.get_object ("find_query");
             var replacement = (Gtk.Entry) builder.get_object ("find_replacement");
-            dialog.add_response ("close", "Close");
-            dialog.add_response ("next", "Find Next");
-            dialog.add_response ("replace", "Replace Next");
-            dialog.add_response ("all", "Replace All");
-            dialog.set_default_response ("next");
-            dialog.response.connect ((response) => {
-                bool found = false;
-                switch (response) {
-                    case "next":
-                        found = TextEditCommands.find_next (body_view.buffer, search.text);
-                        break;
-                    case "replace":
-                        found = TextEditCommands.replace_next (
-                            body_view.buffer, search.text, replacement.text
-                        );
-                        break;
-                    case "all":
-                        int count = TextEditCommands.replace_all (
-                            body_view.buffer, search.text, replacement.text
-                        );
-                        found = count > 0;
-                        save_label.label = "%d replacements".printf (count);
-                        break;
-                    default:
-                        return;
-                }
-                if (!found) {
+            var match_case = (Gtk.CheckButton) builder.get_object (
+                "find_case_sensitive"
+            );
+            var buttons = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            var find = new Gtk.Button.with_label ("Find Next");
+            var replace = new Gtk.Button.with_label ("Replace Next");
+            var replace_all = new Gtk.Button.with_label ("Replace All");
+            var close = new Gtk.Button.with_label ("Close");
+            find.clicked.connect (() => {
+                if (!TextEditCommands.find_next (
+                    body_view.buffer, search.text, match_case.active
+                )) {
                     save_label.label = "No matching text";
                 }
-                persist_editor_body ();
             });
-            dialog.present (this);
+            replace.clicked.connect (() => {
+                if (TextEditCommands.replace_next (
+                    body_view.buffer, search.text, replacement.text, match_case.active
+                )) {
+                    persist_editor_body ();
+                } else {
+                    save_label.label = "No matching text";
+                }
+            });
+            replace_all.clicked.connect (() => {
+                var count = TextEditCommands.replace_all (
+                    body_view.buffer, search.text, replacement.text, match_case.active
+                );
+                persist_editor_body ();
+                save_label.label = "%d replacements".printf (count);
+            });
+            close.clicked.connect (() => window.close ());
+            buttons.append (find);
+            buttons.append (replace);
+            buttons.append (replace_all);
+            buttons.append (close);
+            layout.append (buttons);
+            window.set_child (layout);
+            window.present ();
         }
 
         /** Presents bounded reminder choices in the local time zone. */
@@ -513,6 +560,11 @@ namespace Stickies {
             key_controller.key_pressed.connect ((keyval, keycode, modifiers) => {
                 if ((modifiers & Gdk.ModifierType.CONTROL_MASK) == 0) {
                     return false;
+                }
+                if (keyval == Gdk.Key.Return || keyval == Gdk.Key.KP_Enter) {
+                    TextEditCommands.toggle_checklist_item (body_view.buffer);
+                    persist_editor_body ();
+                    return true;
                 }
                 if (keyval == Gdk.Key.b) {
                     format_selection ("bold");
@@ -735,6 +787,45 @@ namespace Stickies {
             }
         }
 
+        /** Asks for a local rich-text document to import into this note. */
+        private void choose_rtf_import () {
+            var dialog = new Gtk.FileDialog ();
+            dialog.title = "Import RTF into Note";
+            dialog.open.begin (this, attachment_cancellable, (object, result) => {
+                try {
+                    var file = dialog.open.end (result);
+                    import_rtf_async.begin (file);
+                } catch (IOError.CANCELLED error) {
+                    return;
+                } catch (Error error) {
+                    show_save_failure (error.message);
+                }
+            });
+        }
+
+        /** Replaces editor text only after a complete and validated conversion. */
+        private async void import_rtf_async (GLib.File source) {
+            try {
+                string text;
+                string formatting;
+                yield RtfImporter.import_note (
+                    source, attachment_cancellable, out text, out formatting
+                );
+                is_syncing_view = true;
+                RichTextCodec.load (body_view.buffer, text, formatting);
+                last_rendered_formatting = formatting;
+                is_syncing_view = false;
+                repository.set_body (note.id, text, formatting);
+                save_label.label = "RTF imported";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not import RTF: " + error.message);
+            } finally {
+                is_syncing_view = false;
+            }
+        }
+
         /** Selects a new local RTF export file for the current note. */
         private void choose_rtf_export () {
             var dialog = new Gtk.FileDialog ();
@@ -874,21 +965,27 @@ namespace Stickies {
                     row.append (remove_button);
                     attachments_box.append (row);
 #if HAVE_IMAGEKIT
-                    if (attachment.is_image ()) {
-                        var viewer = new ImageKit.ImageView ();
-                        viewer.set_size_request (-1, 120);
-                        attachments_box.append (viewer);
-                        var file = GLib.File.new_for_path (attachment.path);
-                        viewer.load_file.begin (
-                            file, null, attachment_cancellable, (object, result) => {
-                            try {
-                                viewer.load_file.end (result);
-                            } catch (IOError.CANCELLED error) {
+                    if (attachment.is_image () || attachment.mime_type == "application/pdf") {
+                        // Allocate the ImageKit viewer only when the user requests a
+                        // preview. PDF pages are rasterized by Poppler, not ImageKit.
+                        var is_pdf = attachment.mime_type == "application/pdf";
+                        var expander = new Gtk.Expander (
+                            is_pdf ? "Preview PDF First Page" : "Image Preview"
+                        );
+                        expander.notify["expanded"].connect ((property) => {
+                            if (!expander.expanded || expander.get_child () != null) {
                                 return;
-                            } catch (Error error) {
-                                warning ("Attachment preview failed: %s", error.message);
+                            }
+                            var viewer = new ImageKit.ImageView ();
+                            viewer.set_size_request (-1, 160);
+                            expander.set_child (viewer);
+                            if (is_pdf) {
+                                load_pdf_preview.begin (attachment, viewer);
+                            } else {
+                                load_image_preview (attachment.path, viewer);
                             }
                         });
+                        attachments_box.append (expander);
                     }
 #endif
                 }
@@ -896,6 +993,46 @@ namespace Stickies {
                 show_save_failure (error.message);
             }
         }
+
+#if HAVE_IMAGEKIT
+        /** Loads a user-opened image through the shared Majoris Image component. */
+        private void load_image_preview (string path, ImageKit.ImageView viewer) {
+            var file = GLib.File.new_for_path (path);
+            viewer.load_file.begin (file, null, attachment_cancellable, (object, result) => {
+                try {
+                    viewer.load_file.end (result);
+                } catch (IOError.CANCELLED error) {
+                    return;
+                } catch (Error error) {
+                    warning ("ImageKit preview failed: %s", error.message);
+                }
+            });
+        }
+
+        /** Renders PDF page one in a child process and delegates display to ImageKit. */
+        private async void load_pdf_preview (
+            NoteAttachment attachment, ImageKit.ImageView viewer
+        ) {
+            try {
+                var pdf = GLib.File.new_for_path (attachment.path);
+                var preview = yield PdfPreviewService.render_first_page (
+                    pdf, attachment_cancellable
+                );
+                if (attachment_cancellable.is_cancelled () || viewer.get_parent () == null) {
+                    PdfPreviewService.delete_preview (preview);
+                    return;
+                }
+                pdf_previews.add (preview);
+                yield viewer.load_file (preview, null, attachment_cancellable);
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                if (!attachment_cancellable.is_cancelled ()) {
+                    show_status ("PDF preview unavailable: " + error.message);
+                }
+            }
+        }
+#endif
 
         /** Opens the original copy in the user's default external application. */
         private void open_attachment (NoteAttachment attachment) {
@@ -1040,7 +1177,12 @@ namespace Stickies {
                     return true;
                 }
             }
+            find_window?.close ();
             attachment_cancellable.cancel ();
+            foreach (var preview in pdf_previews) {
+                PdfPreviewService.delete_preview (preview);
+            }
+            pdf_previews.clear ();
             repository.note_updated.disconnect (on_note_updated);
             repository.note_saved.disconnect (on_note_saved);
             repository.attachment_changed.disconnect (on_attachment_changed);

@@ -123,3 +123,27 @@ test(
          meson.project_source_root() / 'tests/integration', '-p', 'test_stage7_release.py'],
   suite: 'integration',
 )
+
+test(
+  'Stage 8 bounded RTF import',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage8_rtf_import.py'],
+  suite: 'integration',
+)
+
+test(
+  'Stage 8 desktop and editing contracts',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage8_contracts.py'],
+  suite: 'integration',
+)
+
+test(
+  'Stage 8 bounded PDF first-page preview',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration', '-p', 'test_stage8_pdf_preview.py'],
+  suite: 'integration',
+)
