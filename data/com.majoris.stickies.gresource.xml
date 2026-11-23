@@ -3,6 +3,7 @@
   <gresource prefix="/com/majoris/stickies">
     <file>manager-window.ui</file>
     <file>note-window.ui</file>
+    <file>image-crop-editor.ui</file>
     <file>text-tools.ui</file>
     <file>note-colors.css</file>
   </gresource>

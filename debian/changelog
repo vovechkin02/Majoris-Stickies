@@ -1,3 +1,15 @@
+majoris-stickies (0.9.8-1) unstable; urgency=medium
+
+  * Add non-destructive, image-relative raster cropping as SVG viewport copies.
+  * Add actual page-scoped PDF Ink annotations in separate PDF attachments.
+  * Reuse existing pen validation, attachment storage, and Majoris Image views.
+  * Reject unsupported rotated PDF pages rather than misplacing annotations.
+  * Preserve SQLite schema v7, existing originals and earlier share formats.
+  * Add bounded CLI/format/security tests and installed-worker path checks.
+  * Native Vala, GTK/Wayland, ImageKit and Debian binary tests remain pending.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 13:08:00 +1100
+
 majoris-stickies (0.9.7-1) unstable; urgency=medium
 
   * Restore executable permissions on Debian rules and scheduled-sync helper.

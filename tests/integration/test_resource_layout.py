@@ -24,7 +24,8 @@ class ResourceLayoutTests(unittest.TestCase):
         filenames = {node.text for node in root.iter("file")}
         self.assertEqual(
             filenames,
-            {"manager-window.ui", "note-window.ui", "text-tools.ui", "note-colors.css"},
+            {"manager-window.ui", "note-window.ui", "image-crop-editor.ui",
+             "text-tools.ui", "note-colors.css"},
         )
         for name in filenames:
             self.assertTrue((self.data_dir / name).is_file(), name)
@@ -46,7 +47,7 @@ class ResourceLayoutTests(unittest.TestCase):
         import re
 
         root = self.data_dir.parent / "src" / "gtk"
-        for window in ("manager-window", "note-window"):
+        for window in ("manager-window", "note-window", "image-crop-editor"):
             source = (root / f"{window}.vala").read_text(encoding="utf-8")
             document = ET.parse(self.data_dir / f"{window}.ui")
             ids = {item.get("id") for item in document.iter("object")}

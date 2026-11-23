@@ -16,3 +16,5 @@ usr/lib/systemd/user/majoris-stickies-auto-sync.service
 usr/lib/systemd/user/majoris-stickies-auto-sync.timer
 usr/bin/majoris-stickies-pdf-text
 usr/bin/majoris-stickies-image-markup
+usr/bin/majoris-stickies-image-crop
+usr/bin/majoris-stickies-pdf-annotate

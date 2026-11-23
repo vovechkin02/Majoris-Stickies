@@ -311,3 +311,17 @@ test(
          '-p', 'test_stage9_7_image_markup.py'],
   suite: 'integration',
 )
+
+# Stage 9.8: non-destructive image cropping and true PDF Ink annotations.
+foreach case_name : [
+  'test_stage9_8_image_crop.py',
+  'test_stage9_8_pdf_annotations.py',
+]
+  test(
+    'Stage 9.8 ' + case_name,
+    python,
+    args: ['-m', 'unittest', 'discover', '-s',
+           meson.project_source_root() / 'tests/integration', '-p', case_name],
+    suite: 'integration',
+  )
+endforeach

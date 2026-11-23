@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.7 (non-destructive markup and source capture; native gate pending)  
+**Version:** 0.9.8 (non-destructive crop and PDF Ink annotations; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,25 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.8 — Image cropping and actual PDF annotations
+
+- **Image cropping:** Choose **Crop** on PNG/JPEG/GIF/WebP attachments to create
+  a self-contained, non-destructive SVG crop. The selection uses numeric image-
+  relative percentages and preserves aspect ratio through native image-header
+  dimensions. Majoris Image remains the image renderer; no extra pixel decoder
+  or database migration is introduced.
+- **Actual PDF annotations:** Choose **Annotate PDF** in the page preview to
+  attach a separate PDF containing real, editable `/Ink` annotation objects.
+  The previous **Mark Up Page** SVG preview action is retained. The optional
+  `python3-pypdf` Debian 13 package is used only for PDF authoring.
+- **Compatibility:** Existing notes, SQLite schema v7, attachment IDs,
+  share/backup formats and original source files are unchanged. Invalid,
+  rotated, and protected PDFs fail closed rather than silently misplacing ink.
+- **Qualification:** New bounded-output, PDF rendering, security and installed
+  helper tests are included. Native GTK/Wayland testing remains outstanding.
+
+See [`docs/stage-9-8-qualification.md`](docs/stage-9-8-qualification.md).
 
 ## v0.9.7 — Inline resizing, source capture and media markup
 

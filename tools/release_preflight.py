@@ -83,6 +83,19 @@ def check_metadata(root: Path) -> list[str]:
             (root / "debian/majoris-stickies.install").read_text(encoding="utf-8")):
         errors.append("The image-markup helper is missing from installed packages")
 
+    # The new edit operations must be installed in source and Debian packages.
+    for filename, helper in (
+        ("stickies_image_crop.py", "majoris-stickies-image-crop"),
+        ("stickies_pdf_annotate.py", "majoris-stickies-pdf-annotate"),
+    ):
+        executable = root / "tools" / filename
+        if not executable.exists() or not executable.stat().st_mode & stat.S_IXUSR:
+            errors.append(f"The {helper} worker is absent or not executable")
+        if (filename not in meson or
+                f"usr/bin/{helper}" not in
+                (root / "debian/majoris-stickies.install").read_text(encoding="utf-8")):
+            errors.append(f"The {helper} worker is not packaged")
+
     control = (root / "debian/control").read_text(encoding="utf-8")
     if not all(phrase in control for phrase in (
         "gnome-shell (>= 48)", "gnome-shell (<< 51)",

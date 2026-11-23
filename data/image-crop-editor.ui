@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="StickiesImageCropEditor" parent="GtkWindow">
+    <property name="title">Crop Image</property>
+    <property name="default-width">700</property>
+    <property name="default-height">525</property>
+    <property name="modal">True</property>
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">vertical</property>
+        <property name="spacing">8</property>
+        <property name="margin-top">12</property>
+        <property name="margin-bottom">12</property>
+        <property name="margin-start">12</property>
+        <property name="margin-end">12</property>
+        <child>
+          <object class="GtkBox" id="preview_box">
+            <property name="orientation">vertical</property>
+            <property name="height-request">330</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel">
+            <property name="label">Crop coordinates are percentages of the original image</property>
+            <property name="wrap">True</property>
+            <property name="halign">start</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">12</property>
+            <child><object class="GtkLabel"><property name="label">Left %</property></object></child>
+            <child>
+              <object class="GtkSpinButton" id="left_spin">
+                <property name="adjustment">
+                  <object class="GtkAdjustment">
+                    <property name="lower">0</property>
+                    <property name="upper">99</property>
+                    <property name="step-increment">1</property>
+                    <property name="value">10</property>
+                  </object>
+                </property>
+                <accessibility><property name="label">Crop left percentage</property></accessibility>
+              </object>
+            </child>
+            <child><object class="GtkLabel"><property name="label">Top %</property></object></child>
+            <child>
+              <object class="GtkSpinButton" id="top_spin">
+                <property name="adjustment">
+                  <object class="GtkAdjustment">
+                    <property name="lower">0</property>
+                    <property name="upper">99</property>
+                    <property name="step-increment">1</property>
+                    <property name="value">10</property>
+                  </object>
+                </property>
+                <accessibility><property name="label">Crop top percentage</property></accessibility>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">12</property>
+            <child><object class="GtkLabel"><property name="label">Width %</property></object></child>
+            <child>
+              <object class="GtkSpinButton" id="width_spin">
+                <property name="adjustment">
+                  <object class="GtkAdjustment">
+                    <property name="lower">1</property>
+                    <property name="upper">100</property>
+                    <property name="step-increment">1</property>
+                    <property name="value">80</property>
+                  </object>
+                </property>
+                <accessibility><property name="label">Crop width percentage</property></accessibility>
+              </object>
+            </child>
+            <child><object class="GtkLabel"><property name="label">Height %</property></object></child>
+            <child>
+              <object class="GtkSpinButton" id="height_spin">
+                <property name="adjustment">
+                  <object class="GtkAdjustment">
+                    <property name="lower">1</property>
+                    <property name="upper">100</property>
+                    <property name="step-increment">1</property>
+                    <property name="value">80</property>
+                  </object>
+                </property>
+                <accessibility><property name="label">Crop height percentage</property></accessibility>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_label">
+            <property name="halign">start</property>
+            <property name="wrap">True</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">8</property>
+            <property name="halign">end</property>
+            <child>
+              <object class="GtkButton" id="cancel_button">
+                <property name="label">Cancel</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="save_button">
+                <property name="label">Attach Cropped Copy</property>
+                <property name="sensitive">False</property>
+                <style><class name="suggested-action"/></style>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

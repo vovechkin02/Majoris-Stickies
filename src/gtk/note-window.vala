@@ -1577,6 +1577,12 @@ namespace Stickies {
                             open_image_markup (attachment);
                         });
                         row.append (markup_button);
+                        var crop_button = new Gtk.Button.with_label ("Crop");
+                        crop_button.tooltip_text = "Attach a non-destructive image crop";
+                        crop_button.clicked.connect (() => {
+                            open_image_crop (attachment);
+                        });
+                        row.append (crop_button);
                     }
 #endif
                     attachments_box.append (row);
@@ -1622,6 +1628,9 @@ namespace Stickies {
                             var markup_page = new Gtk.Button.with_label ("Mark Up Page");
                             markup_page.tooltip_text = "Attach an annotated preview copy";
                             navigation.append (markup_page);
+                            var annotate_pdf = new Gtk.Button.with_label ("Annotate PDF");
+                            annotate_pdf.tooltip_text = "Attach a PDF with native Ink annotations";
+                            navigation.append (annotate_pdf);
                             layout.append (navigation);
                             layout.append (viewer);
                             expander.set_child (layout);
@@ -1635,7 +1644,16 @@ namespace Stickies {
                             });
                             markup_page.clicked.connect (() => {
                                 if (shown_page >= 1 && !loading_page) {
-                                    open_pdf_page_markup_async.begin (attachment, shown_page);
+                                    open_pdf_page_markup_async.begin (
+                                        attachment, shown_page, false
+                                    );
+                                }
+                            });
+                            annotate_pdf.clicked.connect (() => {
+                                if (shown_page >= 1 && !loading_page) {
+                                    open_pdf_page_markup_async.begin (
+                                        attachment, shown_page, true
+                                    );
                                 }
                             });
                             previous.clicked.connect (() => {
@@ -1804,7 +1822,7 @@ namespace Stickies {
 #if HAVE_IMAGEKIT
         /** Opens a non-destructive pen overlay for a Poppler-rendered PDF page. */
         private async void open_pdf_page_markup_async (
-            NoteAttachment attachment, int page
+            NoteAttachment attachment, int page, bool native_annotations
         ) {
             try {
                 var preview = yield PdfPreviewService.render_page_scaled (
@@ -1826,7 +1844,15 @@ namespace Stickies {
                 );
                 editor.markup_requested.connect ((svg) => {
                     saving = true;
-                    attach_pdf_page_markup_async.begin (attachment, preview, page, svg);
+                    if (native_annotations) {
+                        attach_pdf_document_annotations_async.begin (
+                            attachment, preview, page, svg
+                        );
+                    } else {
+                        attach_pdf_page_markup_async.begin (
+                            attachment, preview, page, svg
+                        );
+                    }
                 });
                 editor.close_request.connect (() => {
                     if (!saving) {
@@ -1869,6 +1895,25 @@ namespace Stickies {
             }
         }
 
+        /** Attaches a true PDF Ink annotation object, leaving the original PDF intact. */
+        private async void attach_pdf_document_annotations_async (
+            NoteAttachment attachment, GLib.File preview, int page, string svg
+        ) {
+            try {
+                yield PdfAnnotationTransfer.attach (
+                    repository, note.id, attachment, page, svg,
+                    attachment_cancellable
+                );
+                save_label.label = "PDF with Ink annotations attached; original preserved";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not annotate PDF: " + error.message);
+            } finally {
+                PdfPreviewService.delete_preview (preview);
+            }
+        }
+
         /** Restricts ink overlays to compact raster images, never active SVG assets. */
         private static bool is_markup_raster (NoteAttachment attachment) {
             return attachment.mime_type == "image/png" ||
@@ -1886,6 +1931,36 @@ namespace Stickies {
                 attach_image_markup_async.begin (attachment, svg);
             });
             editor.present ();
+        }
+
+        /** Opens a non-destructive percent-based crop editor for one raster. */
+        private void open_image_crop (NoteAttachment attachment) {
+            var editor = new ImageCropEditor (
+                this, attachment.path, attachment_cancellable
+            );
+            editor.crop_requested.connect ((left, top, width, height) => {
+                attach_image_crop_async.begin (
+                    attachment, left, top, width, height
+                );
+            });
+            editor.present ();
+        }
+
+        /** Copies the selected raster viewport into a managed SVG attachment. */
+        private async void attach_image_crop_async (
+            NoteAttachment attachment, int left, int top, int width, int height
+        ) {
+            try {
+                yield ImageCropTransfer.attach (
+                    repository, note.id, attachment, left, top, width, height,
+                    attachment_cancellable
+                );
+                save_label.label = "Cropped image copy attached; original preserved";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not crop image: " + error.message);
+            }
         }
 
         /** Attaches a separate annotated SVG copy through the interchange service. */

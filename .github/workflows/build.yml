@@ -17,7 +17,7 @@ jobs:
             debhelper dpkg-dev pkgconf xvfb xauth dbus-x11 \
             libglib2.0-dev libgee-0.8-dev libgtk-4-dev libadwaita-1-dev \
             libsqlite3-dev libgtksourceview-5-dev libspelling-1-dev \
-            hunspell-en-us nodejs poppler-utils desktop-file-utils
+            hunspell-en-us nodejs poppler-utils python3-pypdf desktop-file-utils
       - name: Check out source
         uses: actions/checkout@v4
       - name: Release metadata and native prerequisite preflight
@@ -71,3 +71,7 @@ jobs:
         run: python3 -m unittest discover -s tests/integration -p 'test_store_session_lock.py'
       - name: Raster markup security and format qualification
         run: python3 -m unittest discover -s tests/integration -p 'test_stage9_7_image_markup.py' 
+
+      - name: PDF Ink and non-destructive image crop regression
+        run: |
+          python3 -m unittest discover -s tests/integration -p 'test_stage9_8_*.py'
