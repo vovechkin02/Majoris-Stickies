@@ -67,10 +67,10 @@ namespace Stickies {
             height_spin.value_changed.connect (() => update_selection ());
             cancel_button.clicked.connect (() => close ());
             save_button.clicked.connect (() => {
-                int x = left_spin.value_as_int;
-                int y = top_spin.value_as_int;
-                int width = width_spin.value_as_int;
-                int height = height_spin.value_as_int;
+                int x = left_spin.get_value_as_int ();
+                int y = top_spin.get_value_as_int ();
+                int width = width_spin.get_value_as_int ();
+                int height = height_spin.get_value_as_int ();
                 if (x + width > 100 || y + height > 100) {
                     status_label.label = "Crop must remain inside the original image";
                     return;
@@ -84,7 +84,7 @@ namespace Stickies {
                         var geometry = ImageCropTransfer.probe.end (result);
                         var parts = geometry.split (" ");
                         int width;
-                        int height;
+                        int height = 0;
                         if (!int.try_parse (parts[0], out width) ||
                             !int.try_parse (parts[1], out height)) {
                             return;
@@ -127,10 +127,10 @@ namespace Stickies {
             if (updating_controls) {
                 return;
             }
-            int x = left_spin.value_as_int;
-            int y = top_spin.value_as_int;
-            int width = width_spin.value_as_int;
-            int height = height_spin.value_as_int;
+            int x = left_spin.get_value_as_int ();
+            int y = top_spin.get_value_as_int ();
+            int width = width_spin.get_value_as_int ();
+            int height = height_spin.get_value_as_int ();
             bool valid = x + width <= 100 && y + height <= 100;
             if (valid) {
                 selection.set_selection (x, y, width, height);

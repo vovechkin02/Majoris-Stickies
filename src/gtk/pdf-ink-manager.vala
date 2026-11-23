@@ -30,11 +30,11 @@ namespace Stickies {
             index_spin.set_range (1, count);
             index_spin.set_value (1);
             redraw_button.clicked.connect (() => {
-                redraw_requested (index_spin.value_as_int);
+                redraw_requested (index_spin.get_value_as_int ());
                 close ();
             });
             remove_button.clicked.connect (() => {
-                remove_requested (index_spin.value_as_int);
+                remove_requested (index_spin.get_value_as_int ());
                 close ();
             });
             cancel_button.clicked.connect (() => close ());

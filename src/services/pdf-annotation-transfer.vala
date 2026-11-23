@@ -25,7 +25,7 @@ namespace Stickies {
             yield process.communicate_utf8_async (
                 null, cancellable, out result, out diagnostic
             );
-            int count;
+            int count = 0;
             if (!process.get_successful () || result == null || result.length > 8 ||
                 !int.try_parse (result.strip (), out count) || count < 0 || count > 1000) {
                 throw new IOError.INVALID_DATA (

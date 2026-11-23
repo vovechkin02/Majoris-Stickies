@@ -245,7 +245,7 @@ namespace Stickies {
                     continue;
                 }
                 int begin;
-                int finish;
+                int finish = 0;
                 if (!int.try_parse (fields[0], out begin) ||
                     !int.try_parse (fields[1], out finish) ||
                     begin >= end || finish <= start) {

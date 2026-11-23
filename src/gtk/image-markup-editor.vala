@@ -74,7 +74,7 @@ namespace Stickies {
                         var dimensions = ImageCropTransfer.probe.end (result);
                         var parts = dimensions.split (" ");
                         int width;
-                        int height;
+                        int height = 0;
                         if (!int.try_parse (parts[0], out width) ||
                             !int.try_parse (parts[1], out height)) {
                             return;

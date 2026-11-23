@@ -18,7 +18,10 @@ private void test_dynamic_clipboard_styles () {
     assert (!html.contains ("Sample;position"));
     assert (html.contains ("color:#aa11cc"));
     assert (html.contains ("font-size:23pt"));
-    assert (html.contains ("data-note-list=\"bullet\""));
+    // Semantic bullet lists wrap the styled text in a real unordered list item.
+    assert (GLib.Regex.match_simple (
+        "<ul><li>(<span[^>]*>){3}A(</span>){3}&amp;💜</li></ul>", html
+    ));
 }
 
 /** Confirms bounded inline image data reaches HTML without exposing managed paths. */

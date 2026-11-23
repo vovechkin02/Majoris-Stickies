@@ -27,8 +27,8 @@ namespace Stickies {
                 );
             }
             var fields = output.strip ().split (" ");
-            int width;
-            int height;
+            int width = 0;
+            int height = 0;
             if (fields.length != 2 || !int.try_parse (fields[0], out width) ||
                 !int.try_parse (fields[1], out height) ||
                 width < 1 || height < 1 || width > 20000 || height > 20000) {
