@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.12 (RTF paragraph geometry and bounded RTFD list metadata; native gate pending)  
+**Version:** 0.9.13 (TextEdit RTFD comparison/evidence tooling; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,29 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.13 — Genuine TextEdit RTFD qualification framework
+
+- **Document comparison:** The read-only `stickies_textedit_qualify.py`
+  accepts an original `.rtfd`, a Stickies export, and a TextEdit-resaved copy.
+  It compares visible text, normalized style spans, image positions, and
+  attachment hashes, reporting bounded losses while allowing harmless
+  attachment filename changes. The previous single-fixture command remains.
+- **Provenance and security:** Optional non-overwriting evidence records bind
+  fixture names to exact text/attachment bytes. A `textedit` record can only
+  be created on macOS with explicit user confirmation and is **user-attested**,
+  not cryptographic verification of TextEdit ownership. No source packages
+  are modified or automatically transmitted.
+- **Reproducible Mac procedure:** A macOS-only wrapper and documented case
+  matrix cover font/color/size, Unicode, inline graphics, indentation,
+  custom tab stops, nested lists and a full import/export/resave sequence.
+  Constructed regression fixtures never count as genuine TextEdit evidence.
+- **Compatibility:** SQLite schema **v7**, RTFD metadata and established
+  document formats remain unchanged. No speculative AppKit parser extensions
+  or separate document models were introduced. Native Vala/GTK and macOS
+  TextEdit GUI qualification still require execution in the target environment.
+
+See [`docs/stage-9-13-qualification.md`](docs/stage-9-13-qualification.md).
 
 ## v0.9.12 — Paragraph geometry and list-table compatibility
 

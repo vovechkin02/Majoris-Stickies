@@ -582,3 +582,14 @@ retain their existing formatting; applications without the new tokens may
 show text without these newer paragraph attributes. The SQLite version stays
 v7 and existing attachment identifiers and portable bundle manifests stay
 unchanged.
+
+
+## Stage 9.13 — TextEdit qualification evidence boundary
+
+TextEdit qualification is an **offline developer workflow**, not a new runtime
+persistence format or a second document model. The existing RTFD reader
+continues to own bounded package validation. The fixture qualifier records
+read-only semantic comparisons and attachment-content fingerprints; filename
+changes do not constitute document loss. User-attested macOS evidence records
+are not substitutes for native GTK/TextEdit GUI operation or visual review.
+No new GoF participant or database migration is justified by this tooling.

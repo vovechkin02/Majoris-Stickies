@@ -1,3 +1,14 @@
+majoris-stickies (0.9.13-1) unstable; urgency=medium
+
+  * Add deterministic RTFD text, style, attachment, and inline-image comparisons.
+  * Track non-overwriting, byte-bound qualification records with declared provenance.
+  * Add a macOS-only, human-confirmed TextEdit capture and comparison workflow.
+  * Keep existing RTFD import/export, SQLite schema v7 and interchange unchanged.
+  * Add realistic constructed-fixture tests without claiming native TextEdit results.
+  * Actual macOS TextEdit and native GTK qualification remain outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 20:01:00 +1100
+
 majoris-stickies (0.9.12-1) unstable; urgency=medium
 
   * Preserve bounded RTF paragraph margins, first-line indent, and tab stops.

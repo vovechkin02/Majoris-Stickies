@@ -2,7 +2,7 @@ project(
   'majoris-stickies',
   'vala',
   'c',
-  version: '0.9.12',
+  version: '0.9.13',
   meson_version: '>=1.1.0',
   default_options: ['warning_level=2'],
 )
@@ -120,7 +120,7 @@ install_data(
 )
 
 summary({
-  'Stage': '9.12 paragraph geometry and RTFD compatibility — native qualification pending',
+  'Stage': '9.13 genuine TextEdit qualification framework — native qualification pending',
   'ImageKit': imagekit_dep.found(),
   'Spellcheck': spellcheck_dep.found() and sourceview_dep.found(),
   'Shell extension installed': get_option('shell_extension'),

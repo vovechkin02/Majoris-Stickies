@@ -388,3 +388,13 @@ test(
          '-p', 'test_stage9_12_paragraph_interop.py'],
   suite: 'integration',
 )
+
+# Stage 9.13: constructed regression fixtures for genuine TextEdit qualification.
+test(
+  'Stage 9.13 RTFD semantic comparison and evidence contracts',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage9_13_textedit_qualification.py'],
+  suite: 'integration',
+)

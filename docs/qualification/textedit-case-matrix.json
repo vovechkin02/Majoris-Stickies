@@ -1,0 +1,31 @@
+{
+  "format": "majoris-textedit-test-plan-1",
+  "provenance_required": "Real macOS TextEdit GUI save; no constructed fixtures",
+  "cases": [
+    {
+      "id": "font-color-size",
+      "instructions": "Create several font-family runs with an installed font, RGB foreground colors, bold/italic, and different point sizes; save as an RTFD directory.",
+      "verify": ["Unicode text preserved", "Font family retained where supported", "Size and RGB foreground runs retained", "Visual line wrapping recorded"]
+    },
+    {
+      "id": "unicode-images",
+      "instructions": "Insert two independent images, one with a Unicode or space-containing filename, between text including accented and emoji characters.",
+      "verify": ["Two distinct attachments retained", "Attachment byte hashes preserved", "Inline image ordering and positions preserved", "ImageKit rendering checked manually"]
+    },
+    {
+      "id": "paragraph-indents-tabs",
+      "instructions": "Set paragraph left/right indents, negative first-line indent, and left/center/right/decimal tab stops; include literal tabs.",
+      "verify": ["RTF paragraph geometry tokens retained", "Custom tab stops retained", "GTK and TextEdit visual alignment compared"]
+    },
+    {
+      "id": "nested-lists",
+      "instructions": "Use nested bullet and numbered lists, mixed indentation, and normal paragraphs before and after lists.",
+      "verify": ["Supported list kind and depth retained", "List order retained", "Unsupported numbering styles documented, not invented"]
+    },
+    {
+      "id": "combined-edit-reimport",
+      "instructions": "Open an actual TextEdit-generated RTFD in Stickies, modify text styling and one image, export, open/save with TextEdit, and reimport.",
+      "verify": ["Original note and source package remain unchanged", "New exported RTFD opens in TextEdit", "No unexpected text, image or formatting losses", "Screenshot-based visual review performed"]
+    }
+  ]
+}
