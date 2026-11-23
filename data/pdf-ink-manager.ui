@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="StickiesPdfInkManager" parent="GtkWindow">
+    <property name="title">Manage PDF Ink</property>
+    <property name="default-width">390</property>
+    <property name="default-height">190</property>
+    <property name="modal">True</property>
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">vertical</property>
+        <property name="spacing">12</property>
+        <property name="margin-top">16</property>
+        <property name="margin-bottom">16</property>
+        <property name="margin-start">16</property>
+        <property name="margin-end">16</property>
+        <child>
+          <object class="GtkLabel" id="prompt_label">
+            <property name="halign">start</property>
+            <property name="wrap">True</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkSpinButton" id="index_spin">
+            <property name="adjustment">
+              <object class="GtkAdjustment">
+                <property name="lower">1</property>
+                <property name="upper">1000</property>
+                <property name="step-increment">1</property>
+                <property name="value">1</property>
+              </object>
+            </property>
+            <accessibility><property name="label">Ink annotation number</property></accessibility>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">8</property>
+            <child>
+              <object class="GtkButton" id="redraw_button">
+                <property name="label">Redraw Selected Ink</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="remove_button">
+                <property name="label">Remove Selected Ink</property>
+                <style><class name="destructive-action"/></style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="cancel_button">
+                <property name="label">Cancel</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

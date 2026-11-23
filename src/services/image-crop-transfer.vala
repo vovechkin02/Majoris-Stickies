@@ -4,6 +4,39 @@ namespace Stickies {
      * Majoris Image displays the result and the original remains unchanged.
      */
     public class ImageCropTransfer : GLib.Object {
+        /** Probes bounded raster geometry without decoding pixels in the editor. */
+        public static async string probe (
+            string path, string mime, GLib.Cancellable? cancellable
+        ) throws Error {
+            string[] argv = {
+                "majoris-stickies-image-crop", "--probe",
+                "--image", path, "--mime", mime
+            };
+            var process = new GLib.Subprocess.newv (
+                argv,
+                GLib.SubprocessFlags.STDOUT_PIPE | GLib.SubprocessFlags.STDERR_PIPE
+            );
+            string? output = null;
+            string? diagnostic = null;
+            yield process.communicate_utf8_async (
+                null, cancellable, out output, out diagnostic
+            );
+            if (!process.get_successful () || output == null || output.length > 32) {
+                throw new IOError.INVALID_DATA (
+                    diagnostic != null ? diagnostic.strip () : "Invalid image dimensions"
+                );
+            }
+            var fields = output.strip ().split (" ");
+            int width;
+            int height;
+            if (fields.length != 2 || !int.try_parse (fields[0], out width) ||
+                !int.try_parse (fields[1], out height) ||
+                width < 1 || height < 1 || width > 20000 || height > 20000) {
+                throw new IOError.INVALID_DATA ("Invalid raster geometry");
+            }
+            return "%d %d".printf (width, height);
+        }
+
         /** Creates one managed non-destructive crop and deletes its private working file. */
         public static async void attach (
             NoteRepository repository, string note_id, NoteAttachment original,

@@ -325,3 +325,17 @@ foreach case_name : [
     suite: 'integration',
   )
 endforeach
+
+# Stage 9.9: interactive crop geometry, rotated PDFs and editable Ink copies.
+foreach case_name : [
+  'test_stage9_9_crop_geometry.py',
+  'test_stage9_9_pdf_ink.py',
+]
+  test(
+    'Stage 9.9 ' + case_name,
+    python,
+    args: ['-m', 'unittest', 'discover', '-s',
+           meson.project_source_root() / 'tests/integration', '-p', case_name],
+    suite: 'integration',
+  )
+endforeach

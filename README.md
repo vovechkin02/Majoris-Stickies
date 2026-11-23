@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.8 (non-destructive crop and PDF Ink annotations; native gate pending)  
+**Version:** 0.9.9 (interactive cropping and PDF Ink management; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,27 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.9 — Interactive crop handles and complete PDF Ink management
+
+- **Crop handles:** Drag eight visible crop handles or move the selection over
+  the ImageKit preview, with accessible percentage spin buttons retained.
+  A bounded header probe sizes the preview to source aspect ratio and the
+  existing non-destructive SVG crop output remains unchanged.
+- **Markup geometry:** The InkCanvas transforms pointer and drawing coordinates
+  between GTK widget allocation and its portable 640×360 vector space. Raster
+  previews are fitted without stretching at different aspect ratios/scales.
+- **Rotated PDF Ink:** Native Ink placement supports 0/90/180/270° rotations
+  and crop-box offsets. Poppler verifies actual output positioning in tests.
+- **Manage Ink:** Select an existing Ink annotation to redraw or remove in a
+  separate PDF copy. Redraw shows a temporary preview with the old Ink hidden.
+  Removing Ink also prunes unreachable PDF objects; unrelated annotations are
+  retained. Signed documents are intentionally rejected.
+- **Safety and compatibility:** SQLite schema v7, earlier attachment and
+  sharing formats, and original source files are unchanged. Real GTK/ImageKit
+  qualification remains outstanding in this source-packaging environment.
+
+See [`docs/stage-9-9-qualification.md`](docs/stage-9-9-qualification.md).
 
 ## v0.9.8 — Image cropping and actual PDF annotations
 

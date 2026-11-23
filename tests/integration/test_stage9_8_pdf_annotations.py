@@ -84,8 +84,8 @@ class PdfInkAnnotationTests(unittest.TestCase):
             outputs.append(prefix.with_suffix(".png").read_bytes())
         self.assertNotEqual(outputs[0], outputs[1])
 
-    def test_rejects_out_of_page_ink_and_rotated_pages(self) -> None:
-        """Avoid transposing coordinates for rotated or letterboxed pages."""
+    def test_rejects_off_page_ink_including_rotated_page_margins(self) -> None:
+        """Reject strokes outside the true page, even after applying rotation."""
         narrow = PdfWriter()
         narrow.add_blank_page(width=60, height=600)
         narrow.write(self.original)
@@ -95,7 +95,7 @@ class PdfInkAnnotationTests(unittest.TestCase):
         rotated = PdfWriter()
         rotated.add_blank_page(width=300, height=150).rotate(90)
         rotated.write(self.original)
-        with self.assertRaisesRegex(annotate.PdfAnnotationError, "Rotated"):
+        with self.assertRaisesRegex(annotate.PdfAnnotationError, "outside"):
             annotate.annotate_pdf(self.original, self.output, 1, INK)
 
     def test_rejects_invalid_pdf_and_symlinks(self) -> None:

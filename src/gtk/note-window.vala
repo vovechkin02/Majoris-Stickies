@@ -1631,6 +1631,9 @@ namespace Stickies {
                             var annotate_pdf = new Gtk.Button.with_label ("Annotate PDF");
                             annotate_pdf.tooltip_text = "Attach a PDF with native Ink annotations";
                             navigation.append (annotate_pdf);
+                            var manage_ink = new Gtk.Button.with_label ("Manage Ink");
+                            manage_ink.tooltip_text = "Redraw or remove existing PDF Ink";
+                            navigation.append (manage_ink);
                             layout.append (navigation);
                             layout.append (viewer);
                             expander.set_child (layout);
@@ -1654,6 +1657,11 @@ namespace Stickies {
                                     open_pdf_page_markup_async.begin (
                                         attachment, shown_page, true
                                     );
+                                }
+                            });
+                            manage_ink.clicked.connect (() => {
+                                if (shown_page >= 1 && !loading_page) {
+                                    manage_pdf_ink_async.begin (attachment, shown_page);
                                 }
                             });
                             previous.clicked.connect (() => {
@@ -1820,22 +1828,82 @@ namespace Stickies {
         }
 
 #if HAVE_IMAGEKIT
-        /** Opens a non-destructive pen overlay for a Poppler-rendered PDF page. */
-        private async void open_pdf_page_markup_async (
-            NoteAttachment attachment, int page, bool native_annotations
+        /** Lets the user select and redraw or delete one existing Ink annotation. */
+        private async void manage_pdf_ink_async (
+            NoteAttachment attachment, int page
         ) {
             try {
+                int count = yield PdfAnnotationTransfer.count_ink (
+                    attachment, page, attachment_cancellable
+                );
+                if (attachment_cancellable.is_cancelled ()) {
+                    return;
+                }
+                if (count == 0) {
+                    save_label.label = "This page has no existing Ink annotations";
+                    return;
+                }
+                var dialog = new PdfInkManager (this, page, count);
+                dialog.redraw_requested.connect ((selected_ink) => {
+                    open_pdf_page_markup_async.begin (
+                        attachment, page, true, "replace", selected_ink
+                    );
+                });
+                dialog.remove_requested.connect ((selected_ink) => {
+                    remove_pdf_ink_async.begin (attachment, page, selected_ink);
+                });
+                dialog.present ();
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Unable to list PDF Ink: " + error.message);
+            }
+        }
+
+        /** Creates a new managed PDF without the selected Ink annotation. */
+        private async void remove_pdf_ink_async (
+            NoteAttachment attachment, int page, int index
+        ) {
+            try {
+                yield PdfAnnotationTransfer.attach (
+                    repository, note.id, attachment, page, "", attachment_cancellable,
+                    "remove", index
+                );
+                save_label.label = "PDF Ink removed in a new copy; original preserved";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not remove PDF Ink: " + error.message);
+            }
+        }
+
+        /** Opens a non-destructive pen overlay for a Poppler-rendered PDF page. */
+        private async void open_pdf_page_markup_async (
+            NoteAttachment attachment, int page, bool native_annotations,
+            string operation = "add", int selected_ink = 0
+        ) {
+            GLib.File? clean_pdf = null;
+            try {
+                var source = GLib.File.new_for_path (attachment.path);
+                if (operation == "replace") {
+                    var clean = yield PdfAnnotationTransfer.prepare_redraw_preview (
+                        attachment, page, selected_ink, attachment_cancellable
+                    );
+                    clean_pdf = clean;
+                    source = clean;
+                }
                 var preview = yield PdfPreviewService.render_page_scaled (
-                    GLib.File.new_for_path (attachment.path), page, 640,
-                    attachment_cancellable
+                    source, page, 640, attachment_cancellable
                 );
                 if (attachment_cancellable.is_cancelled ()) {
                     PdfPreviewService.delete_preview (preview);
+                    PdfAnnotationTransfer.delete_temporary (clean_pdf);
                     return;
                 }
                 var local_path = preview.get_path ();
                 if (local_path == null) {
                     PdfPreviewService.delete_preview (preview);
+                    PdfAnnotationTransfer.delete_temporary (clean_pdf);
                     return;
                 }
                 bool saving = false;
@@ -1846,7 +1914,8 @@ namespace Stickies {
                     saving = true;
                     if (native_annotations) {
                         attach_pdf_document_annotations_async.begin (
-                            attachment, preview, page, svg
+                            attachment, preview, page, svg, operation, selected_ink,
+                            clean_pdf
                         );
                     } else {
                         attach_pdf_page_markup_async.begin (
@@ -1857,13 +1926,16 @@ namespace Stickies {
                 editor.close_request.connect (() => {
                     if (!saving) {
                         PdfPreviewService.delete_preview (preview);
+                        PdfAnnotationTransfer.delete_temporary (clean_pdf);
                     }
                     return false;
                 });
                 editor.present ();
             } catch (IOError.CANCELLED error) {
+                PdfAnnotationTransfer.delete_temporary (clean_pdf);
                 return;
             } catch (Error error) {
+                PdfAnnotationTransfer.delete_temporary (clean_pdf);
                 show_save_failure ("Could not mark up PDF preview: " + error.message);
             }
         }
@@ -1897,12 +1969,14 @@ namespace Stickies {
 
         /** Attaches a true PDF Ink annotation object, leaving the original PDF intact. */
         private async void attach_pdf_document_annotations_async (
-            NoteAttachment attachment, GLib.File preview, int page, string svg
+            NoteAttachment attachment, GLib.File preview, int page, string svg,
+            string operation = "add", int selected_ink = 0,
+            GLib.File? clean_pdf = null
         ) {
             try {
                 yield PdfAnnotationTransfer.attach (
                     repository, note.id, attachment, page, svg,
-                    attachment_cancellable
+                    attachment_cancellable, operation, selected_ink
                 );
                 save_label.label = "PDF with Ink annotations attached; original preserved";
             } catch (IOError.CANCELLED error) {
@@ -1911,6 +1985,7 @@ namespace Stickies {
                 show_save_failure ("Could not annotate PDF: " + error.message);
             } finally {
                 PdfPreviewService.delete_preview (preview);
+                PdfAnnotationTransfer.delete_temporary (clean_pdf);
             }
         }
 
@@ -1925,7 +2000,7 @@ namespace Stickies {
         /** Opens a scoped ink editor without modifying the selected attachment. */
         private void open_image_markup (NoteAttachment attachment) {
             var editor = new ImageMarkupEditor (
-                this, attachment.path, attachment_cancellable
+                this, attachment.path, attachment_cancellable, attachment.mime_type
             );
             editor.markup_requested.connect ((svg) => {
                 attach_image_markup_async.begin (attachment, svg);
@@ -1936,7 +2011,7 @@ namespace Stickies {
         /** Opens a non-destructive percent-based crop editor for one raster. */
         private void open_image_crop (NoteAttachment attachment) {
             var editor = new ImageCropEditor (
-                this, attachment.path, attachment_cancellable
+                this, attachment.path, attachment.mime_type, attachment_cancellable
             );
             editor.crop_requested.connect ((left, top, width, height) => {
                 attach_image_crop_async.begin (

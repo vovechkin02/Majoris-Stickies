@@ -17,7 +17,8 @@ jobs:
             debhelper dpkg-dev pkgconf xvfb xauth dbus-x11 \
             libglib2.0-dev libgee-0.8-dev libgtk-4-dev libadwaita-1-dev \
             libsqlite3-dev libgtksourceview-5-dev libspelling-1-dev \
-            hunspell-en-us nodejs poppler-utils python3-pypdf desktop-file-utils
+            hunspell-en-us nodejs poppler-utils python3-pypdf python3-pil \
+            python3-cairosvg desktop-file-utils
       - name: Check out source
         uses: actions/checkout@v4
       - name: Release metadata and native prerequisite preflight
@@ -75,3 +76,6 @@ jobs:
       - name: PDF Ink and non-destructive image crop regression
         run: |
           python3 -m unittest discover -s tests/integration -p 'test_stage9_8_*.py'
+
+      - name: Rotation-aware PDF Ink and visual crop geometry regression
+        run: python3 -m unittest discover -s tests/integration -p 'test_stage9_9_*.py'

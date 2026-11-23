@@ -43,6 +43,10 @@ namespace Stickies {
         private InkStroke? current_stroke;
         private double start_x;
         private double start_y;
+        private int content_left = 0;
+        private int content_top = 0;
+        private int content_right = CANVAS_WIDTH - 1;
+        private int content_bottom = CANVAS_HEIGHT - 1;
 
         /** Sets up a finite drawing surface and installs the pointer gesture. */
         public InkCanvas () {
@@ -76,6 +80,33 @@ namespace Stickies {
             add_controller (drag);
         }
 
+        /** Constrains ink to the letterboxed content shown by ImageKit. */
+        public void set_image_geometry (int width, int height) {
+            if (width < 1 || height < 1) {
+                return;
+            }
+            double scale = Math.fmin (
+                (double) CANVAS_WIDTH / width, (double) CANVAS_HEIGHT / height
+            );
+            double fitted_width = width * scale;
+            double fitted_height = height * scale;
+            content_left = (int) Math.ceil ((CANVAS_WIDTH - fitted_width) / 2.0);
+            content_top = (int) Math.ceil ((CANVAS_HEIGHT - fitted_height) / 2.0);
+            content_right = (int) Math.floor ((CANVAS_WIDTH + fitted_width) / 2.0) - 1;
+            content_bottom = (int) Math.floor ((CANVAS_HEIGHT + fitted_height) / 2.0) - 1;
+            clear_ink ();
+        }
+
+        /** Converts widget device coordinates to the stable 640×360 ink space. */
+        private double scale_x (double value) {
+            return value * CANVAS_WIDTH / get_allocated_width ();
+        }
+
+        /** Converts widget device coordinates to the stable 640×360 ink space. */
+        private double scale_y (double value) {
+            return value * CANVAS_HEIGHT / get_allocated_height ();
+        }
+
         /** Begins one bounded stroke with the initial pointer coordinates. */
         private void begin_stroke (double x, double y) {
             if (strokes.size >= MAX_STROKES) {
@@ -83,6 +114,12 @@ namespace Stickies {
             }
             start_x = x;
             start_y = y;
+            int px = (int) scale_x (x);
+            int py = (int) scale_y (y);
+            if (px < content_left || px > content_right ||
+                py < content_top || py > content_bottom) {
+                return;
+            }
             current_stroke = new InkStroke ();
             strokes.add (current_stroke);
             append_point (x, y);
@@ -151,10 +188,12 @@ namespace Stickies {
             if (stroke == null || stroke.points.size >= MAX_POINTS_PER_STROKE) {
                 return;
             }
-            int px = (int) x;
-            int py = (int) y;
-            px = px < 0 ? 0 : (px >= CANVAS_WIDTH ? CANVAS_WIDTH - 1 : px);
-            py = py < 0 ? 0 : (py >= CANVAS_HEIGHT ? CANVAS_HEIGHT - 1 : py);
+            int px = (int) scale_x (x);
+            int py = (int) scale_y (y);
+            px = px < content_left ? content_left :
+                (px > content_right ? content_right : px);
+            py = py < content_top ? content_top :
+                (py > content_bottom ? content_bottom : py);
             if (stroke.points.size > 0) {
                 var last = stroke.points[stroke.points.size - 1];
                 if (last.x == px && last.y == py) {
@@ -167,6 +206,10 @@ namespace Stickies {
 
         /** Draws captured vectors within the widget's GTK snapshot. */
         private void draw_strokes (Cairo.Context context) {
+            context.scale (
+                (double) get_allocated_width () / CANVAS_WIDTH,
+                (double) get_allocated_height () / CANVAS_HEIGHT
+            );
             context.set_source_rgb (0.14, 0.14, 0.14);
             context.set_line_width (PEN_WIDTH);
             context.set_line_cap (Cairo.LineCap.ROUND);

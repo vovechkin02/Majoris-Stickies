@@ -13,6 +13,7 @@ import base64
 import os
 from pathlib import Path
 import struct
+import stat
 import sys
 import xml.etree.ElementTree as ET
 
@@ -99,6 +100,28 @@ def raster_dimensions(data: bytes, mime: str) -> tuple[int, int]:
     return width, height
 
 
+def probe_raster(source: Path, mime: str) -> tuple[int, int]:
+    """Read bounded metadata for preview geometry without decoding image pixels."""
+    if mime not in _markup.MIME_SIGNATURES:
+        raise ImageCropError("Unsupported raster preview format")
+    try:
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_size < 24 or
+                    info.st_size > 6 * 1024 * 1024):
+                raise ImageCropError("Image preview must be a bounded regular file")
+            data = stream.read(256 * 1024)
+    except OSError as error:
+        raise ImageCropError("Cannot open image preview") from error
+    if not any(data.startswith(signature)
+               for signature in _markup.MIME_SIGNATURES[mime]):
+        raise ImageCropError("Invalid image preview signature")
+    if mime == "image/webp" and data[8:12] != b"WEBP":
+        raise ImageCropError("Invalid WebP preview signature")
+    return raster_dimensions(data, mime)
+
+
 def compose_crop(data: bytes, mime: str, left: int, top: int,
                  width: int, height: int) -> bytes:
     """Create a standalone image viewport for one validated percentage rectangle."""
@@ -158,14 +181,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--mime", required=True,
                         choices=("image/png", "image/jpeg", "image/gif", "image/webp"))
-    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--probe", action="store_true",
+                        help="Print validated native width and height")
     for option in ("left", "top", "width", "height"):
-        parser.add_argument(f"--{option}", type=int, required=True)
+        parser.add_argument(f"--{option}", type=int)
     args = parser.parse_args(argv)
     try:
-        crop_image(args.image, args.mime, args.output, args.left, args.top,
-                   args.width, args.height)
-    except (ImageCropError, OSError) as error:
+        if args.probe:
+            width, height = probe_raster(args.image, args.mime)
+            print(width, height)
+        elif args.output is None or any(
+            getattr(args, name) is None for name in ("left", "top", "width", "height")
+        ):
+            raise ImageCropError("Select an output and complete crop rectangle")
+        else:
+            crop_image(args.image, args.mime, args.output, args.left, args.top,
+                       args.width, args.height)
+    except (ImageCropError, ImageMarkupError, OSError) as error:
         print(f"Image crop: {error}", file=sys.stderr)
         return 1
     return 0

@@ -510,3 +510,31 @@ is no additional persistent resize state. Source websites can be read from
 the clipboard only on explicit user action and pass through the existing
 `SourceLink` validator. These simple domain/GUI boundaries use normal
 GTK/GObject callbacks rather than gratuitous new GoF participants.
+
+
+## Stage 9.9 — Presentation geometry and page-scoped PDF Ink editing
+
+`CropSelectionOverlay` owns pointer-driven selection geometry only; XML-backed
+`ImageCropEditor` maintains accessible percent controls and orchestrates the
+existing `ImageCropTransfer` boundary. `ImageKit.ImageView` remains the sole
+application image presentation component. An explicit bounded header probe
+allows the crop and ink editors to fit images without decoding them again.
+The `InkCanvas` maps widget coordinates into its established portable 640×360
+vector coordinate space, constrains raster ink to the fitted image rectangle,
+and scales Cairo output back to widget allocation. These are presentation
+coordinates, not changes to persisted attachment semantics.
+
+`PdfInkManager` is an XML-backed selection dialog. `PdfAnnotationTransfer`
+provides numeric Ink listing and non-destructive add/replace/remove operations;
+`tools/stickies_pdf_annotate.py` implements PDF-specific validation, page
+quarter-turn/crop-box coordinate transforms, writer operations and orphaned
+Ink pruning. Redraw previews are private throwaway PDFs without the selected
+old Ink. The actual edited attachment is always created from the original
+managed PDF via `NoteRepository.attach_file`, preserving other page content,
+other annotation types, note UUIDs, schema v7 and older share formats. The
+architecture deliberately does not introduce a PDF decoder in Vala.
+
+This is direct domain/service/UI separation, not a claim of new GoF Strategy or
+Adapter objects. GObject signals already provide observer-style UI callbacks.
+Native Wayland/ImageKit geometry, EXIF image orientations and actual Cairo/Gtk
+lifetime tests remain qualification work in the Debian 13 environment.

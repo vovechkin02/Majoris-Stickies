@@ -1,3 +1,16 @@
+majoris-stickies (0.9.9-1) unstable; urgency=medium
+
+  * Add interactive image crop handles and aspect-fitted ImageKit previews.
+  * Scale native pen positions to GTK preview allocation and letterbox bounds.
+  * Support four PDF page rotations and nonzero crop-box origins for Ink.
+  * Add non-destructive redraw/removal of selected existing PDF Ink annotations.
+  * Prune orphaned Ink data and preserve unrelated PDF annotations.
+  * Add template-backed Ink management controls and geometry/rotation tests.
+  * Retain SQLite schema v7 and all existing note and sharing formats.
+  * Native GTK/ImageKit and Debian binary qualification remain outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 13:08:00 +1100
+
 majoris-stickies (0.9.8-1) unstable; urgency=medium
 
   * Add non-destructive, image-relative raster cropping as SVG viewport copies.

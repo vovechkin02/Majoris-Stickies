@@ -16,6 +16,8 @@ gtk_sources = files(
   'gtk/inline-image-controller.vala',
   'gtk/image-markup-editor.vala',
   'gtk/image-crop-editor.vala',
+  'gtk/crop-selection-overlay.vala',
+  'gtk/pdf-ink-manager.vala',
   'gtk/manager-window.vala',
   'gtk/note-window.vala',
   'gtk/note-paper-style.vala',
