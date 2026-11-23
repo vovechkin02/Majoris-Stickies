@@ -352,7 +352,7 @@ test('Stage 9.10 semantic lists and HTML interchange',
   stage9_10_unit_executable, suite: 'unit')
 
 test(
-  'Stage 9.10 external macOS RTFD interchange',
+  'Stage 9.10 portable RTFD interchange',
   python,
   args: ['-m', 'unittest', 'discover', '-s',
          meson.project_source_root() / 'tests/integration',
@@ -362,7 +362,7 @@ test(
 
 # Stage 9.11: preserved RTF style tokens and safer AppKit RTFD compatibility.
 test(
-  'Stage 9.11 rich RTF and macOS RTFD compatibility',
+  'Stage 9.11 rich RTF and RTFD compatibility',
   python,
   args: ['-m', 'unittest', 'discover', '-s',
          meson.project_source_root() / 'tests/integration',
@@ -381,7 +381,7 @@ test('Stage 9.12 paragraph tokens and HTML interoperability',
   stage9_12_unit_executable, suite: 'unit')
 
 test(
-  'Stage 9.12 RTF paragraph and macOS RTFD compatibility',
+  'Stage 9.12 RTF paragraph and RTFD compatibility',
   python,
   args: ['-m', 'unittest', 'discover', '-s',
          meson.project_source_root() / 'tests/integration',
@@ -389,12 +389,20 @@ test(
   suite: 'integration',
 )
 
-# Stage 9.13: constructed regression fixtures for genuine TextEdit qualification.
+# Stage 9.14: explicit, local clipboard-source parsing with no browser services.
+stage9_14_unit_executable = executable(
+  'test-stage9-14',
+  [core_sources, files('unit/test-stage9-14.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 9.14 clipboard origin parsing', stage9_14_unit_executable, suite: 'unit')
+
 test(
-  'Stage 9.13 RTFD semantic comparison and evidence contracts',
+  'Stage 9.14 local source detection and no external service scaffolding',
   python,
   args: ['-m', 'unittest', 'discover', '-s',
          meson.project_source_root() / 'tests/integration',
-         '-p', 'test_stage9_13_textedit_qualification.py'],
+         '-p', 'test_stage9_14_local_source.py'],
   suite: 'integration',
 )

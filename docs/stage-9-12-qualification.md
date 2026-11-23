@@ -1,4 +1,4 @@
-# Majoris Stickies v0.9.12 — Paragraph and macOS RTFD Interoperability
+# Majoris Stickies v0.9.12 — Portable Paragraph and RTFD Interoperability
 
 ## Implemented scope
 
@@ -46,42 +46,20 @@
   spacing, complex tables, embedded RTF objects, or `NSFileWrapper` variants.
   These features must remain explicitly outside guaranteed interoperability.
 
-## Actual macOS TextEdit qualification — still required
+## Standalone RTFD qualification
 
-No authentic macOS TextEdit-generated `.rtfd` sample or macOS AppKit runtime
-was available in this source-only build environment. The included generated
-fixtures **do not count** as a TextEdit UI round trip.
-
-On a macOS installation, create a document in TextEdit with the following:
-
-- Left and right indents, including a negative first-line indent;
-- Left/center/right/decimal tab stops and literal tab characters;
-- Multiple bullet and numbered list levels with mixed paragraph styles;
-- Custom font, size, RGB color, Unicode and at least one image with an
-  attachment filename containing spaces or accented characters.
-
-Save as **Rich Text with Attachments (.rtfd)** and keep the original directory
-package, including `TXT.rtf` and any ordinary sibling image files. Use:
+RTFD is a local document exchange format, not a connection to an Apple
+account or service. Verify the supported RTF/RTFD subset with constructed
+and user-supplied files using the existing bounded parser:
 
 ```sh
-python3 tools/stickies_textedit_qualify.py '/path/to/ActualTextEdit.rtfd'
-python3 tools/stickies_textedit_qualify.py '/path/to/ActualTextEdit.rtfd' \
-    --expected '/path/to/expected.json'
+python3 tools/stickies_rtfd.py inspect /path/to/example.rtfd
+python3 tools/stickies_rtfd.py metadata /path/to/example.rtfd
 ```
 
-An optional expected JSON object may include `text`, `text_sha256`,
-`formatting_sha256`, `attachments`, `inline_images`, `paragraph_styles`,
-`list_styles`, and `required_styles`. The tool reads the package without
-modifying it, fails on mismatched expectations, and prints a structured report.
-Only label the document a **real TextEdit fixture** when its provenance has
-been verified; constructed test files are not substitutes.
-
-Then perform the **native UI** sequence: import into Stickies, examine its
-appearance and image alignment, export a new `.rtfd`, open that output in
-TextEdit, compare the visual layout side by side, save again with TextEdit,
-and reimport into Stickies. Record the macOS version, source/exported fixtures,
-losses, screenshots and any unsupported properties. Pixel-level visual and
-native GTK/ImageKit behavior are **not tested** by the fixture inspector.
+The converter rejects unsupported structures rather than promising complete
+third-party document fidelity. No platform-specific application, operating
+system service, or remote account is needed to exchange local documents.
 
 ## Local build and testing
 

@@ -68,6 +68,8 @@ namespace Stickies {
         private Gtk.Button? float_button;
         private Gtk.Button? translucent_button;
         private Gtk.Window? find_window;
+        private uint64 clipboard_revision = 0;
+        private ulong clipboard_changed_id = 0;
 #if HAVE_SPELLING
         private Spelling.TextBufferAdapter? spelling_adapter;
 #endif
@@ -106,6 +108,7 @@ namespace Stickies {
             register_header_double_click ();
             refresh_attachments ();
             register_attachment_drop ();
+            register_paste_source_detection ();
 
             title_entry.changed.connect (on_title_changed);
             body_view.buffer.changed.connect (on_body_changed);
@@ -811,6 +814,39 @@ namespace Stickies {
             return deadline_us;
         }
 
+        /** Watches user-initiated pastes without observing browsing activity. */
+        private void register_paste_source_detection () {
+            var clipboard = get_clipboard ();
+            clipboard_changed_id = clipboard.changed.connect (() => {
+                clipboard_revision++;
+            });
+            body_view.paste_clipboard.connect (() => {
+                if (!is_syncing_view && note.source_url == "") {
+                    capture_paste_source_async.begin (clipboard_revision);
+                }
+            });
+        }
+
+        /** Saves provenance only if the pasted clipboard and note remain unchanged. */
+        private async void capture_paste_source_async (uint64 expected_revision) {
+            try {
+                var detected = yield ClipboardSourceCapture.detect (
+                    get_clipboard (), attachment_cancellable
+                );
+                if (detected == "" || attachment_cancellable.is_cancelled () ||
+                    expected_revision != clipboard_revision || note.source_url != "" ||
+                    repository.find_note (note.id) == null) {
+                    return;
+                }
+                repository.set_source_url (note.id, detected);
+                show_status ("Website source detected from pasted content");
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                debug ("No clipboard source available: %s", error.message);
+            }
+        }
+
         /** Edits an explicit web origin; screenshots never fabricate a source URL. */
         private void edit_source_url () {
             var editor = new Gtk.Entry ();
@@ -820,7 +856,7 @@ namespace Stickies {
             editor.input_purpose = Gtk.InputPurpose.URL;
             var dialog = new Adw.AlertDialog (
                 "Source Website", "Add an HTTP(S) link to the original page. " +
-                "Stickies does not automatically inspect other browser windows."
+                "Source URLs are detected automatically when pasted content provides one."
             );
             dialog.set_extra_child (editor);
             dialog.add_response ("cancel", "Cancel");
@@ -2262,6 +2298,10 @@ namespace Stickies {
             }
             find_window?.close ();
             attachment_cancellable.cancel ();
+            if (clipboard_changed_id != 0) {
+                GLib.SignalHandler.disconnect (get_clipboard (), clipboard_changed_id);
+                clipboard_changed_id = 0;
+            }
             foreach (var preview in pdf_previews) {
                 PdfPreviewService.delete_preview (preview);
             }

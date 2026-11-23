@@ -28,6 +28,7 @@ gtk_sources = files(
 )
 
 service_sources = files(
+  'services/clipboard-source-capture.vala',
   'services/image-markup-transfer.vala',
   'services/image-crop-transfer.vala',
   'services/pdf-annotation-transfer.vala',

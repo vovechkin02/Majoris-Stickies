@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.13 (TextEdit RTFD comparison/evidence tooling; native gate pending)  
+**Version:** 0.9.14 (local clipboard source detection and service-scaffolding cleanup; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -24,28 +24,27 @@ and Debian binaries remain unqualified in this packaging environment
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
 
-## v0.9.13 — Genuine TextEdit RTFD qualification framework
+## v0.9.14 — Local website-source attribution and scope cleanup
 
-- **Document comparison:** The read-only `stickies_textedit_qualify.py`
-  accepts an original `.rtfd`, a Stickies export, and a TextEdit-resaved copy.
-  It compares visible text, normalized style spans, image positions, and
-  attachment hashes, reporting bounded losses while allowing harmless
-  attachment filename changes. The previous single-fixture command remains.
-- **Provenance and security:** Optional non-overwriting evidence records bind
-  fixture names to exact text/attachment bytes. A `textedit` record can only
-  be created on macOS with explicit user confirmation and is **user-attested**,
-  not cryptographic verification of TextEdit ownership. No source packages
-  are modified or automatically transmitted.
-- **Reproducible Mac procedure:** A macOS-only wrapper and documented case
-  matrix cover font/color/size, Unicode, inline graphics, indentation,
-  custom tab stops, nested lists and a full import/export/resave sequence.
-  Constructed regression fixtures never count as genuine TextEdit evidence.
-- **Compatibility:** SQLite schema **v7**, RTFD metadata and established
-  document formats remain unchanged. No speculative AppKit parser extensions
-  or separate document models were introduced. Native Vala/GTK and macOS
-  TextEdit GUI qualification still require execution in the target environment.
+- **Automatic source capture on paste:** When pasted clipboard data explicitly
+  carries an HTTP(S) provenance URL, Stickies saves it as the note source. It
+  recognizes a single URL in plain text, `text/uri-list` and Firefox URL/title
+  formats (including Firefox UTF-16), plus the explicit `SourceURL:` header or recognized source metadata
+  in HTML. Unrelated hyperlinks in copied content are never guessed as origin.
+- **Privacy by design:** The feature runs only when the user pastes into a note;
+  it does not inspect browser tabs, history, processes, or services. It never
+  replaces an existing source, and rejects malformed, oversized, ambiguous or
+  non-HTTP(S) metadata. A browser that supplies no URL provenance cannot be
+  attributed automatically; the manual clipboard-URL option remains available.
+- **Standalone scope:** Removed the macOS-only TextEdit qualification wrapper,
+  provenance/evidence verifier, fixture matrix and dedicated tests. These were
+  application-specific interoperability scaffolding, not Majoris features.
+  Kept useful local RTF/RTFD import/export and Unicode codecs; none connect to
+  an Apple, Microsoft, or other online account or service.
+- **Compatibility:** SQLite schema v7, notes, links, attachments, portable
+  sharing, RTF/RTFD files, and existing desktop features are unchanged.
 
-See [`docs/stage-9-13-qualification.md`](docs/stage-9-13-qualification.md).
+See [`docs/stage-9-14-qualification.md`](docs/stage-9-14-qualification.md).
 
 ## v0.9.12 — Paragraph geometry and list-table compatibility
 
@@ -70,8 +69,7 @@ See [`docs/stage-9-13-qualification.md`](docs/stage-9-13-qualification.md).
   macOS `NSParagraphStyle` or `NSFileWrapper` compatibility.
 - **Qualification:** The new offline suites include RTF/RTFD round trips,
   list-table metadata, invalid tab/margin controls, Unicode image offsets and
-  a read-only fixture inspector for real TextEdit output. No authentic macOS
-  TextEdit fixture was supplied or validated by this source-only build.
+  portable RTFD inspect commands and targeted offline validations.
 
 See [`docs/stage-9-12-qualification.md`](docs/stage-9-12-qualification.md).
 
@@ -163,7 +161,7 @@ See [`docs/stage-9-8-qualification.md`](docs/stage-9-8-qualification.md).
 - **Opt-in website source:** Choose **Use Clipboard URL as Source** in a note's
   options. Stickies reads one URL only after this action, validates HTTP(S),
   and saves it through the existing source-link field. It never watches other
-  browsers or records browsing activity automatically.
+  browsers or records browsing activity in the background.
 - **Non-destructive image markup:** With Majoris Image installed, select a
   small raster attachment and choose **Mark Up Image**. Draw over its ImageKit
   preview and attach a separate bounded SVG copy; the original remains
@@ -467,7 +465,7 @@ Stage 3 adds:
   backend and the user's approval; denial/cancellation never creates a note.
 - **Source references:** attach, clear, search, and open a verified HTTP(S) URL
   per note. URLs are entered by users; the application does not claim that it
-  can identify the active browser page automatically.
+  reads tabs or browser history; explicit pasted provenance is supported.
 - **Clipboard:** "Copy Note" exports text and supported inline styles via
   `text/plain` and `text/html` MIME formats. Attachment filenames are listed,
   but the private attachment files themselves are not embedded in the clipboard.
@@ -618,7 +616,7 @@ unchanged and use only Python standard-library modules.
 | --- | --- |
 | Debian 13 / GNOME | Target platform; native runtime not yet qualified |
 | GTK4 / libadwaita | Declarative GTK4 GUI, majoris-themed note paper |
-| SQLite | Local data; schema v5 with transactional migrations; no Stage 7 database migration |
+| SQLite | Local data; current schema v7 with transactional migrations |
 | [Majoris Image](https://github.com/vovechkin02/Majoris-Image) | Optional GTK4 dependency; image file previews only |
 | GNOME Shell | Optional extension; targeted at Shell 48–50, unverified in compositor |
 | Internet / account | Not required |
@@ -627,7 +625,7 @@ unchanged and use only Python standard-library modules.
 
 | Dependency | Minimum | Purpose |
 | --- | --- | --- |
-| Meson | 1.0 | Build system |
+| Meson | 1.1 | Build system |
 | Ninja, C compiler, `valac` | Toolchain compatible with Debian 13 | Build generated sources |
 | GLib / GIO | 2.74 | Persistence, files, D-Bus |
 | GTK4 | 4.16 | Text-buffer editing and undo support |

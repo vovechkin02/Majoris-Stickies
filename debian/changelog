@@ -1,3 +1,14 @@
+majoris-stickies (0.9.14-1) unstable; urgency=medium
+
+  * Capture a validated, explicitly provided HTTP(S) source from user pastes.
+  * Accept bounded browser clipboard URL formats and provenance headers.
+  * Preserve existing source URLs; reject ambiguous or unsafe source metadata.
+  * Retire platform-specific TextEdit qualification tooling and fixtures.
+  * Keep local RTF/RTFD exchange and SQLite schema v7 backward compatible.
+  * Native compilation and GTK/Wayland qualification remain outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Tue, 24 Nov 2026 06:50:00 +1100
+
 majoris-stickies (0.9.13-1) unstable; urgency=medium
 
   * Add deterministic RTFD text, style, attachment, and inline-image comparisons.

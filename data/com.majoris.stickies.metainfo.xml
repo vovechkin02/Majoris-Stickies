@@ -9,6 +9,7 @@
     <p>Stickies combines a searchable notes manager with independent, richly formatted desktop notes, local image/PDF attachments, and optional GNOME Shell window arrangements.</p>
   </description>
   <releases>
+    <release version="0.9.14" date="2026-11-24" />
     <release version="0.9.13" date="2026-11-23" />
     <release version="0.9.12" date="2026-11-23" />
     <release version="0.9.11" date="2026-11-23" />
