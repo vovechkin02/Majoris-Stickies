@@ -155,7 +155,24 @@ namespace Stickies {
             var output = new GLib.StringBuilder ("<html><body><h2>");
             output.append (GLib.Markup.escape_text (note.title));
             output.append ("</h2><div style=\"white-space:pre-wrap\">");
-            append_formatted_text (output, note.content, note.formatting, embedded_images);
+            var paragraphs = NoteListStructure.parse (note.content, note.formatting);
+            bool has_lists = false;
+            if (paragraphs != null) {
+                foreach (var paragraph in paragraphs) {
+                    if (paragraph.kind != "") {
+                        has_lists = true;
+                        break;
+                    }
+                }
+            }
+            if (has_lists && paragraphs != null) {
+                append_semantic_lists (
+                    output, note.content, note.formatting, paragraphs,
+                    embedded_images
+                );
+            } else {
+                append_formatted_text (output, note.content, note.formatting, embedded_images);
+            }
             output.append ("</div>");
             if (note.source_url != "") {
                 var escaped = GLib.Markup.escape_text (note.source_url);
@@ -176,6 +193,89 @@ namespace Stickies {
             }
             output.append ("</body></html>");
             return output.str;
+        }
+
+        /** Closes nested HTML lists without leaving any unclosed list items. */
+        private static void close_semantic_lists (
+            GLib.StringBuilder output, Gee.ArrayList<string> stack,
+            bool[] open_items, int target
+        ) {
+            while (stack.size > target) {
+                int top = stack.size - 1;
+                if (open_items[top]) {
+                    output.append ("</li>");
+                    open_items[top] = false;
+                }
+                var previous = stack.remove_at (top);
+                output.append (previous == "numbered" ? "</ol>" : "</ul>");
+            }
+        }
+
+        /** Opens an HTML list with its bounded semantic kind and start value. */
+        private static void open_semantic_list (
+            GLib.StringBuilder output, string kind, int start
+        ) {
+            if (kind == "numbered") {
+                output.append_printf ("<ol start=\"%d\">", start);
+            } else if (kind == "checklist") {
+                output.append ("<ul data-note-list=\"checklist\">");
+            } else {
+                output.append ("<ul>");
+            }
+        }
+
+        /** Emits real nested UL/OL/LI nodes from the existing stored list spans. */
+        private static void append_semantic_lists (
+            GLib.StringBuilder output, string content, string formatting,
+            Gee.List<NoteListParagraph> paragraphs,
+            Gee.Map<string, string>? embedded_images
+        ) {
+            var stack = new Gee.ArrayList<string> ();
+            bool[] open_items = new bool[8];
+            foreach (var paragraph in paragraphs) {
+                if (paragraph.kind == "") {
+                    close_semantic_lists (output, stack, open_items, 0);
+                    output.append ("<p>");
+                } else {
+                    int target = paragraph.depth + 1;
+                    if (target > stack.size + 1) {
+                        target = stack.size + 1;
+                    }
+                    close_semantic_lists (output, stack, open_items, target);
+                    if (stack.size == target &&
+                        stack.get (target - 1) != paragraph.kind) {
+                        close_semantic_lists (output, stack, open_items, target - 1);
+                    }
+                    if (stack.size == target && open_items[target - 1]) {
+                        output.append ("</li>");
+                        open_items[target - 1] = false;
+                    }
+                    if (stack.size < target) {
+                        open_semantic_list (
+                            output, paragraph.kind, paragraph.number
+                        );
+                        stack.add (paragraph.kind);
+                    }
+                    output.append (paragraph.checked_item ?
+                        "<li data-checked=\"true\">" : "<li>");
+                    open_items[stack.size - 1] = true;
+                }
+                int first_byte = paragraph.body_start == content.char_count () ?
+                    content.length : content.index_of_nth_char (paragraph.body_start);
+                int last_byte = paragraph.end == content.char_count () ?
+                    content.length : content.index_of_nth_char (paragraph.end);
+                var body = content.substring (first_byte, last_byte - first_byte);
+                var styles_for_body = NoteListStructure.slice_styles (
+                    formatting, paragraph.body_start, paragraph.end
+                );
+                append_formatted_text (
+                    output, body, styles_for_body, embedded_images
+                );
+                if (paragraph.kind == "") {
+                    output.append ("</p>");
+                }
+            }
+            close_semantic_lists (output, stack, open_items, 0);
         }
 
         /** Writes bounded rich-text transitions at each Unicode interval boundary. */

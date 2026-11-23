@@ -2,6 +2,7 @@ core_sources = files(
   'core/inline-image-format.vala',
   'core/note-attachment.vala',
   'core/note-formatting.vala',
+  'core/note-list-structure.vala',
   'core/note-palette.vala',
   'core/note-repository.vala',
   'core/note-title.vala',

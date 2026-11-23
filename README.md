@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.9 (interactive cropping and PDF Ink management; native gate pending)  
+**Version:** 0.9.10 (semantic lists and macOS RTFD interchange; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,25 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.10 — Semantic nested lists and external macOS RTFD
+
+- **Semantic HTML lists:** Bounded paragraph projection emits nested `<ul>`,
+  `<ol>`, and `<li>` rather than only proprietary HTML spans. Ordered-list
+  starting numbers, checkboxes, Unicode style runs and inline images remain
+  available. The original plain-text list markers and schema v7 stay intact.
+- **GTK list consistency:** Editing a list paragraph normalizes its list kind
+  and depth tags, including when Return ends an empty list item.
+- **External macOS RTFD:** Imports Apple `NeXTGraphic` inline graphics from
+  validated sibling files with ordinary filenames (including spaces and UTF-8
+  escapes); maps images into existing managed note attachments. Exports an
+  Apple-compatible `TXT.rtf` attachment reference as well as the existing
+  lossless Majoris metadata. No extra image decoder is introduced.
+- **Safety:** Rejects malformed inline references, symlinks, remote paths and
+  unsupported assets. Existing import rollback, limits and legacy native
+  round trips remain unchanged.
+
+See [`docs/stage-9-10-qualification.md`](docs/stage-9-10-qualification.md).
 
 ## v0.9.9 — Interactive crop handles and complete PDF Ink management
 

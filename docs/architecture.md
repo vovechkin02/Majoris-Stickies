@@ -538,3 +538,21 @@ This is direct domain/service/UI separation, not a claim of new GoF Strategy or
 Adapter objects. GObject signals already provide observer-style UI callbacks.
 Native Wayland/ImageKit geometry, EXIF image orientations and actual Cairo/Gtk
 lifetime tests remain qualification work in the Debian 13 environment.
+
+
+## Stage 9.10 — Semantic paragraph projection and AppKit RTFD bridge
+
+`NoteListStructure` derives typed list paragraphs from existing Unicode text,
+portable prefix markers, and style spans. The same source format remains
+readable to previous versions; HTML serialization emits real nested list
+nodes while preserving bounded inline styling. GTK edit commands keep list
+kind/depth tags consistent with paragraph changes rather than adding a second
+mutable editor document tree.
+
+The native `RtfdTransfer` orchestration delegates `.rtfd` validation and
+`NeXTGraphic` parsing/formatting to the existing bounded Python helper. Only
+verified sibling paths are eligible. External RTFD graphic positions are
+converted to disposable UUID bindings and remapped to private attachment IDs
+by the existing `NoteRepository` transfer. The RTFD exporter emits AppKit
+attachment records in `TXT.rtf` without sacrificing `majoris.json` native
+round trips. Neither the database schema nor note/share identities change.

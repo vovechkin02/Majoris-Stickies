@@ -14,13 +14,13 @@ from contextlib import closing
 import importlib.util
 from importlib.machinery import SourceFileLoader
 import json
-import mimetypes
 import os
 import re
 import shutil
 import sqlite3
 import stat
 import sys
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -51,7 +51,12 @@ MAX_ATTACHMENTS = 32
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 MAX_PACKAGE_BYTES = 128 * 1024 * 1024
 MAX_MANIFEST_BYTES = 8 * 1024 * 1024
-SAFE_ASSET_NAME = re.compile(r"attachment-[0-9]{4}\.[a-z0-9]{1,8}\Z")
+NEXT_GRAPHIC = re.compile(
+    r"\{\{\\NeXTGraphic[ \t]+([^{}\r\n]{1,512})\}[ \t]*(?:¬|\\'ac)?\}",
+    flags=re.IGNORECASE,
+)
+NEXT_GRAPHIC_PROPERTIES = re.compile(r"[ \t]+\\(?:width|height|apple[a-z]+)-?[0-9]*", re.I)
+MAX_RTF_GRAPHICS = 32
 MIME_SUFFIXES = {
     "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
     "image/tiff": ".tiff", "image/webp": ".webp", "image/bmp": ".bmp",
@@ -118,13 +123,12 @@ def export_note(data_dir: Path, note_id: str, destination: Path) -> None:
         raise RtfdError("The active note was not found")
     if len(attachments) > MAX_ATTACHMENTS:
         raise RtfdError("RTFD package has more than 32 attachments")
-    rendered = make_rtf(*note)
     manifest = {
         "format": "majoris-rtfd-1", "attachments": [],
         "native": {"content": note[1], "formatting": note[2]},
     }
     asset_paths: list[tuple[Path, str, int]] = []
-    package_bytes = len(rendered)
+    package_bytes = 0
     for index, (identity, display_name, mime) in enumerate(attachments, 1):
         if not IDENTIFIER.fullmatch(identity) or mime not in MIME_SUFFIXES:
             raise RtfdError("Attachment identity or MIME type is not supported")
@@ -139,6 +143,28 @@ def export_note(data_dir: Path, note_id: str, destination: Path) -> None:
             {"file": name, "name": display_name[:255], "mime": mime,
              "source_id": identity}
         )
+    file_by_identity = {
+        record["source_id"]: record["file"]
+        for record in manifest["attachments"]
+    }
+    graphic_positions: dict[int, tuple[str, int]] = {}
+    for start, end, style in _rtf_export._spans(note[1], note[2]):
+        if not style.startswith("image_"):
+            continue
+        match = re.fullmatch(
+            r"image_([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})_([0-9]{2,4})",
+            style,
+        )
+        if not match or end != start + 1 or note[1][start:end] != "\ufffc":
+            raise RtfdError("Invalid inline image location")
+        filename = file_by_identity.get(match.group(1))
+        if filename is None or not (
+            _mime_for_asset(filename) or ""
+        ).startswith("image/"):
+            raise RtfdError("Inline image not present in the RTFD package")
+        graphic_positions[start] = (filename, int(match.group(2)))
+    rendered = make_rtf(*note, graphic_positions=graphic_positions)
+    package_bytes += len(rendered)
     encoded_manifest = json.dumps(
         manifest, ensure_ascii=True, separators=(",", ":")
     ).encode("utf-8")
@@ -178,6 +204,131 @@ def export_note(data_dir: Path, note_id: str, destination: Path) -> None:
         raise
 
 
+def _mime_for_asset(name: str) -> str | None:
+    """Accept bounded ordinary AppKit filenames without permitting path traversal."""
+    if (not name or name in (".", "..") or name.startswith(".") or
+            len(name.encode("utf-8")) > 255 or any(
+                character in "/\\" or ord(character) < 32 or ord(character) == 127
+                for character in name
+            )):
+        return None
+    if name != Path(name).name:
+        return None
+    suffix = Path(name).suffix.lower()
+    if suffix == ".tif":
+        return "image/tiff"
+    for mime, extension in MIME_SUFFIXES.items():
+        if extension == suffix:
+            return mime
+    return None
+
+
+def _next_graphic_filename(header: str) -> tuple[str, int]:
+    """Decode an RTF-escaped UTF-8 sibling name and optional twip width."""
+    property_match = NEXT_GRAPHIC_PROPERTIES.search(header)
+    name_source = header[:property_match.start()] if property_match else header
+    raw = bytearray()
+    index = 0
+    while index < len(name_source):
+        char = name_source[index]
+        if char == "\\":
+            if index + 1 >= len(name_source):
+                raise RtfdError("Truncated Apple graphic filename escape")
+            next_char = name_source[index + 1]
+            if next_char in "{}\\":
+                raw.extend(next_char.encode("latin-1"))
+                index += 2
+            elif next_char == "'" and index + 3 < len(name_source):
+                try:
+                    raw.append(int(name_source[index + 2:index + 4], 16))
+                except ValueError as error:
+                    raise RtfdError("Invalid Apple graphic filename escape") from error
+                index += 4
+            else:
+                raise RtfdError("Unsupported Apple graphic filename escape")
+        else:
+            raw.extend(char.encode("latin-1"))
+            index += 1
+    try:
+        filename = raw.decode("utf-8", errors="strict").strip()
+    except UnicodeError as error:
+        raise RtfdError("Invalid UTF-8 Apple graphic filename") from error
+    if _mime_for_asset(filename) is None:
+        raise RtfdError("Apple graphic names must be safe sibling image filenames")
+    width_match = re.search(r"\\width([0-9]{1,8})(?![0-9])", header)
+    twips = int(width_match.group(1)) if width_match else 4800
+    # The stored width grid is 96-960 px, in steps of 16. Twips are 1/1440in.
+    width_px = min(960, max(96, (twips * 96 + 720) // 1440))
+    width_px = min(960, max(96, ((width_px + 8) // 16) * 16))
+    return filename, width_px
+
+
+def _external_note(
+    source: Path, assets: list[Path]
+) -> tuple[str, str, dict[str, str]] | None:
+    """Resolve only verified AppKit NeXTGraphic siblings to inline image tokens.
+
+    This does not interpret RTF programs or external paths. Apple graphic groups
+    become unique private-use placeholders before passing to the existing
+    bounded RTF reader, and are then replaced with the app's object character.
+    """
+    rtf = source / "TXT.rtf"
+    descriptor = os.open(rtf, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    with os.fdopen(descriptor, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > _rtf_import.MAX_INPUT_BYTES:
+            raise RtfdError("Apple RTFD text is not a bounded regular file")
+        raw = stream.read(_rtf_import.MAX_INPUT_BYTES + 1)
+        if len(raw) > _rtf_import.MAX_INPUT_BYTES:
+            raise RtfdError("Apple RTFD exceeds the bounded text limit")
+    data = raw.decode("latin-1")
+    found = list(NEXT_GRAPHIC.finditer(data))
+    if not found:
+        if r"\NeXTGraphic" in data:
+            raise RtfdError("Unsupported Apple graphic record")
+        return None
+    if len(found) > MAX_RTF_GRAPHICS:
+        raise RtfdError("RTFD contains too many inline graphics")
+    expected = len(re.findall(r"\{\{\\NeXTGraphic\b", data, re.IGNORECASE))
+    if expected != len(found):
+        raise RtfdError("Malformed or unsupported Apple graphic record")
+    by_name = {file.name: file for file in assets}
+    identifiers = {
+        name: str(uuid.uuid5(uuid.NAMESPACE_URL, "majoris-rtfd:" + name))
+        for name in by_name
+    }
+    blocks: list[str] = []
+    position = 0
+    assignments: list[tuple[str, int, str]] = []
+    for index, match in enumerate(found):
+        name, width = _next_graphic_filename(match.group(1))
+        if name not in by_name:
+            raise RtfdError("Apple graphic references a missing sibling")
+        if not ("image/" in (_mime_for_asset(name) or "")):
+            raise RtfdError("Inline Apple graphic must be a supported image")
+        marker = chr(0xE000 + index)
+        blocks.append(data[position:match.start()])
+        # Convert private-use marker to an RTF Unicode control, not raw UTF-8.
+        blocks.append(r"\uc1\u" + str(ord(marker) - 65536) + "?")
+        assignments.append((marker, width, identifiers[name]))
+        position = match.end()
+    blocks.append(data[position:])
+    replacement = "".join(blocks).encode("latin-1")
+    body, formatting = _rtf_import.RtfReader().parse(replacement)
+    for marker, width, identifier in assignments:
+        if body.count(marker) != 1:
+            raise RtfdError("Ambiguous inline Apple graphic location")
+        start = body.index(marker)
+        formatting += f"{start}:{start + 1}:image_{identifier}_{width}\n"
+        body = body.replace(marker, "\ufffc", 1)
+    if len(formatting.encode("utf-8")) > _rtf_export.MAX_FORMATTING_BYTES:
+        raise RtfdError("Apple RTFD formatting exceeds supported size")
+    if len(body.encode("utf-8")) > _rtf_export.MAX_NOTE_BYTES:
+        raise RtfdError("Apple RTFD text exceeds supported size")
+    _rtf_export._spans(body, formatting)
+    return body, formatting, identifiers
+
+
 def inspect_package(source: Path) -> tuple[str, str, list[Path]]:
     """Validate and decode text and safe attachment paths without modifying files."""
     if source.suffix.lower() != ".rtfd" or source.is_symlink() or not source.is_dir():
@@ -198,10 +349,8 @@ def inspect_package(source: Path) -> tuple[str, str, list[Path]]:
             total_bytes += _regular_file(path, MAX_MANIFEST_BYTES)
             _read_manifest(path)
             continue
-        mime, _ = mimetypes.guess_type(path.name)
-        if not SAFE_ASSET_NAME.fullmatch(path.name) or (
-            mime != "application/pdf" and not (mime or "").startswith("image/")
-        ):
+        mime = _mime_for_asset(path.name)
+        if mime is None:
             raise RtfdError("Unsupported or untrusted RTFD attachment filename")
         total_bytes += _regular_file(path, MAX_ATTACHMENT_BYTES)
         if total_bytes > MAX_PACKAGE_BYTES:
@@ -210,7 +359,8 @@ def inspect_package(source: Path) -> tuple[str, str, list[Path]]:
     if len(included) > MAX_ATTACHMENTS:
         raise RtfdError("RTFD package contains too many attachments")
     read_attachment_metadata(source, included)
-    read_native_note(source, included)
+    if read_native_note(source, included) is None:
+        _external_note(source, included)
     return text, formatting, included
 
 
@@ -226,7 +376,7 @@ def read_attachment_metadata(source: Path, included: list[Path]) -> dict[str, tu
     manifest_path = source / "majoris.json"
     if not manifest_path.exists() and not manifest_path.is_symlink():
         return {
-            asset.name: (asset.name, mimetypes.guess_type(asset.name)[0] or "")
+            asset.name: (asset.name, _mime_for_asset(asset.name) or "")
             for asset in included
         }
     manifest = _read_manifest(manifest_path)
@@ -331,6 +481,8 @@ def main(argv: list[str] | None = None) -> int:
             _, _, assets = inspect_package(args.source)
             descriptions = read_attachment_metadata(args.source, assets)
             native = read_native_note(args.source, assets)
+            if native is None:
+                native = _external_note(args.source, assets)
             if native is not None:
                 text, formatting, identities = native
                 print(f"@content\t{quote(text, safe='')}")

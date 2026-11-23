@@ -93,20 +93,23 @@ namespace Stickies {
                         }
                         continue;
                     }
-                    bool safe_name = name.length > 16 &&
-                        name.has_prefix ("attachment-") && name[15] == '.';
-                    if (safe_name) {
-                        for (int index = 11; index < 15; index++) {
-                            if (name[index] < '0' || name[index] > '9') {
-                                safe_name = false;
-                                break;
-                            }
+                    // AppKit RTFD uses original filenames, commonly with spaces.
+                    // Validate them independently of the helper and never use
+                    // an imported name as a path outside the chosen package.
+                    bool safe_name = name.length > 0 && name.length <= 255 &&
+                        name != "." && name != ".." && !name.has_prefix (".") &&
+                        !name.contains ("/") && !name.contains ("\\");
+                    for (int index = 0; safe_name && index < name.length; index++) {
+                        if ((uint8) name[index] < 32 || (uint8) name[index] == 127) {
+                            safe_name = false;
                         }
                     }
-                    var suffix = safe_name ? name.substring (16) : "";
+                    int period = name.last_index_of_char ('.');
+                    var suffix = safe_name && period >= 0 ?
+                        name.substring (period + 1).down () : "";
                     bool allowed_suffix = false;
                     foreach (var extension in new string[] {
-                        "png", "jpg", "jpeg", "gif", "tiff", "webp", "bmp",
+                        "png", "jpg", "jpeg", "gif", "tiff", "tif", "webp", "bmp",
                         "pdf", "svg", "avif", "heif", "heic"
                     }) {
                         if (suffix == extension) {

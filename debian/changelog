@@ -1,3 +1,15 @@
+majoris-stickies (0.9.10-1) unstable; urgency=medium
+
+  * Project existing list markers and tags into bounded semantic paragraphs.
+  * Export real nested HTML lists without changing SQLite schema v7.
+  * Normalize GTK list-kind and depth tags after paragraph edits.
+  * Import external Apple NeXTGraphic RTFD packages with safe sibling assets.
+  * Export Apple-compatible inline RTFD image references with Majoris metadata.
+  * Add focused RTFD interoperability, malformed-input and semantic-list tests.
+  * Native GTK/ImageKit and Debian binary qualification remain outstanding.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 13:08:00 +1100
+
 majoris-stickies (0.9.9-1) unstable; urgency=medium
 
   * Add interactive image crop handles and aspect-fitted ImageKit previews.

@@ -339,3 +339,23 @@ foreach case_name : [
     suite: 'integration',
   )
 endforeach
+
+
+# Stage 9.10: semantic nested lists and external AppKit RTFD directories.
+stage9_10_unit_executable = executable(
+  'test-stage9-10',
+  [core_sources, files('unit/test-stage9-10.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 9.10 semantic lists and HTML interchange',
+  stage9_10_unit_executable, suite: 'unit')
+
+test(
+  'Stage 9.10 external macOS RTFD interchange',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage9_10_rtfd_compat.py'],
+  suite: 'integration',
+)

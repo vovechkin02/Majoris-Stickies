@@ -119,7 +119,12 @@ def _escape_rtf(text: str) -> str:
     return "".join(output)
 
 
-def make_rtf(title: str, content: str, formatting: str) -> bytes:
+def make_rtf(
+    title: str,
+    content: str,
+    formatting: str,
+    graphic_positions: dict[int, tuple[str, int]] | None = None,
+) -> bytes:
     """Export a portable supported-style subset without an RTF interpreter."""
     if len(title.encode("utf-8")) > 640:
         raise RtfExportError("Note title is too long")
@@ -173,7 +178,27 @@ def make_rtf(title: str, content: str, formatting: str) -> bytes:
             continue
         ordered = sorted(style for style, count in active.items() if count > 0)
         output.extend("{" + styles[style] for style in ordered)
-        output.append(_escape_rtf(content[position:next_position]))
+        if graphic_positions:
+            # Preserve linear memory behavior on large RTFD text. Split only
+            # at the finitely many validated inline-image positions.
+            cursor = position
+            graphic_offsets = sorted(
+                offset for offset in graphic_positions
+                if position <= offset < next_position
+            )
+            for offset in graphic_offsets:
+                filename, width_px = graphic_positions[offset]
+                if content[offset] != "\ufffc":
+                    raise RtfExportError("Invalid RTFD image marker position")
+                output.append(_escape_rtf(content[cursor:offset]))
+                output.append(
+                    r"{{\NeXTGraphic " + filename +
+                    rf" \width{width_px * 15}" + r"}\'ac}"
+                )
+                cursor = offset + 1
+            output.append(_escape_rtf(content[cursor:next_position]))
+        else:
+            output.append(_escape_rtf(content[position:next_position]))
         output.extend("}" for _ in ordered)
     output.append("}")
     result = "".join(output).encode("ascii")

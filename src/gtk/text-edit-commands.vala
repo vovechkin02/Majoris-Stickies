@@ -59,10 +59,8 @@ namespace Stickies {
                 buffer.get_iter_at_line (out paragraph_start, line);
                 var paragraph_end = paragraph_start;
                 paragraph_end.forward_to_line_end ();
-                var kind_tag = buffer.tag_table.lookup ("list-" + kind);
-                if (kind_tag != null) {
-                    buffer.apply_tag (kind_tag, paragraph_start, paragraph_end);
-                }
+                // One owning paragraph role at a time; switching list kinds
+                // must not leave stale metadata on the same logical item.
                 mark_list_depth (buffer, line);
             }
             buffer.end_user_action ();
@@ -115,7 +113,9 @@ namespace Stickies {
             marker_end.forward_chars (offset + marker_length);
             if (rest == "• " || rest == "☐ " || rest == "☑ " ||
                 (kind == "list-numbered" && rest.length == marker_length)) {
+                int line = paragraph_start.get_line ();
                 buffer.delete (ref paragraph_start, ref marker_end);
+                mark_list_depth (buffer, line);
             } else {
                 var to_insert = "\n" + indentation.str + prefix;
                 buffer.insert (ref cursor, to_insert, -1);
@@ -211,20 +211,36 @@ namespace Stickies {
                 spaces++;
             }
             var text = content.substring (spaces);
-            bool list_item = text.has_prefix ("• ") || text.has_prefix ("☐ ") ||
-                text.has_prefix ("☑ ");
-            if (!list_item) {
+            string kind = "";
+            if (text.has_prefix ("• ")) {
+                kind = "bullet";
+            } else if (text.has_prefix ("☐ ") || text.has_prefix ("☑ ")) {
+                kind = "checklist";
+            } else {
                 int marker = text.index_of (". ");
                 int parsed = 0;
-                list_item = marker > 0 && marker <= 7 &&
+                if (marker > 0 && marker <= 7 &&
                     int.try_parse (text.substring (0, marker), out parsed) &&
-                    parsed >= 1;
+                    parsed >= 1) {
+                    kind = "numbered";
+                }
+            }
+            foreach (var candidate in new string[] {
+                "bullet", "numbered", "checklist"
+            }) {
+                var tag = buffer.tag_table.lookup ("list-" + candidate);
+                if (tag != null) {
+                    buffer.remove_tag (tag, first, last);
+                    if (kind == candidate) {
+                        buffer.apply_tag (tag, first, last);
+                    }
+                }
             }
             for (int depth = 1; depth <= 6; depth++) {
                 var tag = buffer.tag_table.lookup ("list-depth-%d".printf (depth));
                 if (tag != null) {
                     buffer.remove_tag (tag, first, last);
-                    if (list_item && spaces / 4 == depth) {
+                    if (kind != "" && spaces / 4 == depth) {
                         buffer.apply_tag (tag, first, last);
                     }
                 }
