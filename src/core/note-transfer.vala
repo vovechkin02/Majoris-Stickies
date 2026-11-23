@@ -28,14 +28,14 @@ namespace Stickies {
         private const int MAX_EMBEDDED_IMAGES = 8;
         private const int MAX_HTML_STYLE_TYPES = 96;
         private const int MAX_HTML_STYLE_BOUNDARIES = 2048;
-        private static string[] styles = {
+        private const string[] styles = {
             "bold", "italic", "underline", "strikethrough", "monospace", "large", "small",
             "font-sans", "font-serif", "font-monospace", "size-10", "size-12",
             "size-14", "size-16", "size-18", "size-20", "size-24",
             "text-red", "text-blue", "text-green", "align-left", "align-center",
             "align-right"
         };
-        private static string[] open_tags = {
+        private const string[] open_tags = {
             "<strong>", "<em>", "<u>", "<s>", "<code>",
             "<span style=\"font-size:larger\">", "<span style=\"font-size:smaller\">",
             "<span style=\"font-family:sans-serif\">", "<span style=\"font-family:serif\">",
@@ -48,7 +48,7 @@ namespace Stickies {
             "<span style=\"display:block;text-align:center\">",
             "<span style=\"display:block;text-align:right\">"
         };
-        private static string[] close_tags = {
+        private const string[] close_tags = {
             "</strong>", "</em>", "</u>", "</s>", "</code>", "</span>", "</span>",
             "</span>", "</span>", "</span>", "</span>", "</span>", "</span>",
             "</span>", "</span>", "</span>", "</span>", "</span>", "</span>",

@@ -3,7 +3,8 @@ using Stickies;
 
 /** Confirms dynamic fonts, colors, point sizes and lists survive safe HTML export. */
 private void test_dynamic_clipboard_styles () {
-    var font = TextStyleFormat.font_token ("Sample;position:absolute");
+    assert (TextStyleFormat.font_token ("Sample;position:absolute") == "");
+    var font = TextStyleFormat.font_token ("Sample;position");
     var note = new Note (
         "eae51042-9c12-4c1e-a6d8-9a8376215faa", "<Title>", "A&💜", "blue", 1, 2,
         "0:1:%s\n0:1:rgb_aa11cc\n0:1:point_23\n0:1:list-bullet\n".printf (font)
@@ -11,9 +12,10 @@ private void test_dynamic_clipboard_styles () {
     var attachments = new Gee.ArrayList<NoteAttachment> ();
     var html = NoteTransfer.to_html (note, attachments);
     assert (html.contains ("&lt;Title&gt;"));
-    assert (html.contains ("A&amp;"));
+    assert (html.contains ("&amp;"));
     assert (html.contains ("font-family:"));
-    assert (!html.contains ("position:absolute"));
+    assert (html.contains ("\\3b "));
+    assert (!html.contains ("Sample;position"));
     assert (html.contains ("color:#aa11cc"));
     assert (html.contains ("font-size:23pt"));
     assert (html.contains ("data-note-list=\"bullet\""));

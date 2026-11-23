@@ -13,7 +13,9 @@ private void test_inline_image_tokens () {
     assert (!InlineImageFormat.parse (
         InlineImageFormat.token (identity, 240) + "../../", out parsed, out width
     ));
-    assert (InlineImageFormat.token (identity, 640) == "");
+    assert (InlineImageFormat.token (identity, 640) != "");
+    assert (InlineImageFormat.token (identity, 641) == "");
+    assert (InlineImageFormat.token (identity, 976) == "");
     var source = "Before " + InlineImageFormat.PLACEHOLDER + " after";
     var formatting = "7:8:%s\n".printf (token);
     assert (NoteFormatting.is_valid (source, formatting));

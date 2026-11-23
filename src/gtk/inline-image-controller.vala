@@ -36,9 +36,9 @@ namespace Stickies {
                     continue;
                 }
                 int start;
-                int end;
-                string id;
-                int width_px;
+                int end = 0;
+                string id = "";
+                int width_px = 0;
                 if (!int.try_parse (fields[0], out start) ||
                     !int.try_parse (fields[1], out end) || end != start + 1 ||
                     !InlineImageFormat.parse (fields[2], out id, out width_px)) {
@@ -92,7 +92,7 @@ namespace Stickies {
                     buffer.delete (ref start, ref next);
                     buffer.get_iter_at_offset (out start, position);
                 }
-                anchor = buffer.create_child_anchor (ref start);
+                anchor = buffer.create_child_anchor (start);
             }
             var style = InlineImageFormat.token (attachment.id, width_px);
             var tag = get_tag (style);

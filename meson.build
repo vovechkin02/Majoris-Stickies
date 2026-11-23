@@ -3,7 +3,7 @@ project(
   'vala',
   'c',
   version: '0.9.6',
-  meson_version: '>=1.0.0',
+  meson_version: '>=1.1.0',
   default_options: ['warning_level=2'],
 )
 

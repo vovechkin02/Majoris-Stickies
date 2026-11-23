@@ -3,7 +3,7 @@ Section: utils
 Priority: optional
 Maintainer: Majoris OS Packaging Team <packaging@example.invalid>
 Build-Depends: debhelper-compat (= 13),
-               meson (>= 1.0),
+               meson (>= 1.1),
                ninja-build,
                pkgconf,
                valac,

@@ -82,14 +82,7 @@ namespace Stickies {
             pdf_previews = new Gee.ArrayList<GLib.File> ();
 #if HAVE_SPELLING
             // Keep spelling state separate from the serialized rich-text tags.
-            var source_buffer = new GtkSource.Buffer (null);
-            body_view.buffer = source_buffer;
-            spelling_adapter = new Spelling.TextBufferAdapter (
-                source_buffer, Spelling.Checker.get_default ()
-            );
-            body_view.set_extra_menu (spelling_adapter.get_menu_model ());
-            body_view.insert_action_group ("spelling", spelling_adapter);
-            spelling_adapter.set_enabled (true);
+            body_view.buffer = new GtkSource.Buffer (null);
 #endif
             RichTextCodec.prepare (body_view.buffer);
             inline_images = new InlineImageController (
@@ -103,6 +96,9 @@ namespace Stickies {
             set_default_size (note.window_width, note.is_collapsed ? 90 : note.window_height);
             apply_color (note.color);
             populate_editor ();
+#if HAVE_SPELLING
+            start_spelling (true);
+#endif
             create_color_menu ();
             create_options_menu ();
             connect_format_buttons ();
@@ -124,6 +120,34 @@ namespace Stickies {
             repository.save_failed.connect (on_save_failed);
             this.close_request.connect (on_close_request);
         }
+
+#if HAVE_SPELLING
+        /** Tracks the completed buffer, including any inline image anchors. */
+        private void start_spelling (bool enabled) {
+            var buffer = (GtkSource.Buffer) body_view.buffer;
+            spelling_adapter = new Spelling.TextBufferAdapter (
+                buffer, Spelling.Checker.get_default ()
+            );
+            body_view.set_extra_menu (spelling_adapter.get_menu_model ());
+            body_view.insert_action_group ("spelling", spelling_adapter);
+            spelling_adapter.set_enabled (enabled);
+        }
+
+        /** Detaches the adapter before GTK inserts anchors without commit notifications. */
+        private bool stop_spelling () {
+            var enabled = spelling_adapter.get_enabled ();
+            var tag = spelling_adapter.get_tag ();
+            body_view.set_extra_menu (null);
+            body_view.insert_action_group ("spelling", null);
+            // A pending cursor callback may still hold the adapter alive.
+            spelling_adapter.dispose ();
+            spelling_adapter = null;
+            if (tag != null) {
+                body_view.buffer.get_tag_table ().remove (tag);
+            }
+            return enabled;
+        }
+#endif
 
         /** Returns this window's note identity. */
         public string note_id () {
@@ -150,6 +174,11 @@ namespace Stickies {
             }
             if (editor_text () != note.content ||
                 last_rendered_formatting != note.formatting) {
+#if HAVE_SPELLING
+                var restore_spelling = spelling_adapter != null &&
+                    note.formatting.contains (":image_");
+                var spelling_enabled = restore_spelling && stop_spelling ();
+#endif
                 RichTextCodec.load (body_view.buffer, note.content, note.formatting);
                 try {
                     inline_images.restore (
@@ -158,6 +187,11 @@ namespace Stickies {
                 } catch (Error error) {
                     show_save_failure ("Inline image restoration failed: " + error.message);
                 }
+#if HAVE_SPELLING
+                if (restore_spelling) {
+                    start_spelling (spelling_enabled);
+                }
+#endif
                 last_rendered_formatting = note.formatting;
             }
             apply_color (note.color);
@@ -744,10 +778,10 @@ namespace Stickies {
                 throw new IOError.INVALID_ARGUMENT ("Use YYYY-MM-DD HH:MM");
             }
             int year;
-            int month;
-            int day;
-            int hour;
-            int minute;
+            int month = 0;
+            int day = 0;
+            int hour = 0;
+            int minute = 0;
             if (!int.try_parse (value.substring (0, 4), out year) ||
                 !int.try_parse (value.substring (5, 2), out month) ||
                 !int.try_parse (value.substring (8, 2), out day) ||
@@ -1786,7 +1820,13 @@ namespace Stickies {
                     return;
                 }
                 is_syncing_view = true;
+#if HAVE_SPELLING
+                var spelling_enabled = stop_spelling ();
+#endif
                 inline_images.insert (attachment);
+#if HAVE_SPELLING
+                start_spelling (spelling_enabled);
+#endif
                 is_syncing_view = false;
                 editor_revision++;
                 persist_editor_body ();

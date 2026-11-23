@@ -32,7 +32,7 @@ namespace Stickies {
                 return false;
             }
             var identity = remainder.substring (0, separator);
-            int width;
+            int width = 0;
             if (!GLib.Uuid.string_is_valid (identity) ||
                 !int.try_parse (remainder.substring (separator + 1), out width) ||
                 !is_supported_width (width)) {

@@ -102,7 +102,7 @@ namespace Stickies {
                 }
                 var pieces = line.split (":");
                 int start_offset;
-                int end_offset;
+                int end_offset = 0;
                 if (!int.try_parse (pieces[0], out start_offset) ||
                     !int.try_parse (pieces[1], out end_offset)) {
                     continue;

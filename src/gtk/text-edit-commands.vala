@@ -96,7 +96,7 @@ namespace Stickies {
                 kind = "list-checklist";
             } else {
                 var dot = rest.index_of (". ");
-                int number;
+                int number = 0;
                 if (dot > 0 && dot < 9 &&
                     int.try_parse (rest.substring (0, dot), out number) &&
                     number >= 1 && number < 1000000) {
@@ -215,7 +215,7 @@ namespace Stickies {
                 text.has_prefix ("☑ ");
             if (!list_item) {
                 int marker = text.index_of (". ");
-                int parsed;
+                int parsed = 0;
                 list_item = marker > 0 && marker <= 7 &&
                     int.try_parse (text.substring (0, marker), out parsed) &&
                     parsed >= 1;

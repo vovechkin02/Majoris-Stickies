@@ -40,7 +40,7 @@ namespace Stickies {
                 subscription_id = source.signal_subscribe (
                     PORTAL_NAME, REQUEST_INTERFACE, "Response", null, null,
                     GLib.DBusSignalFlags.NONE,
-                    (bus, sender, path, iface, signal, parameters) => {
+                    (bus, sender, path, iface, signal_name, parameters) => {
                         if (request_path == null) {
                             // Store a bounded response set until Screenshot returns its handle.
                             if (early_responses.size < 16) {
@@ -126,18 +126,7 @@ namespace Stickies {
                     }
                     if (request_path != null && (timed_out ||
                         (cancellable != null && cancellable.is_cancelled ()))) {
-                        var closing_connection = connection;
-                        closing_connection.call.begin (
-                            PORTAL_NAME, request_path, REQUEST_INTERFACE, "Close",
-                            null, null, GLib.DBusCallFlags.NONE, -1, null,
-                            (object, result) => {
-                                try {
-                                    closing_connection.call.end (result);
-                                } catch (Error error) {
-                                    debug ("Closing screenshot request: %s", error.message);
-                                }
-                            }
-                        );
+                        close_request.begin (connection, request_path);
                     }
                 }
                 if (timeout_id != 0) {
@@ -147,6 +136,18 @@ namespace Stickies {
                     GLib.SignalHandler.disconnect (cancellable, cancel_id);
                 }
                 busy = false;
+            }
+        }
+
+        /** Asks the portal to dismiss an outstanding screenshot request. */
+        private async void close_request (GLib.DBusConnection connection, string request_path) {
+            try {
+                yield connection.call (
+                    PORTAL_NAME, request_path, REQUEST_INTERFACE, "Close",
+                    null, null, GLib.DBusCallFlags.NONE, -1, null
+                );
+            } catch (Error error) {
+                debug ("Closing screenshot request: %s", error.message);
             }
         }
     }
