@@ -556,3 +556,29 @@ converted to disposable UUID bindings and remapped to private attachment IDs
 by the existing `NoteRepository` transfer. The RTFD exporter emits AppKit
 attachment records in `TXT.rtf` without sacrificing `majoris.json` native
 round trips. Neither the database schema nor note/share identities change.
+
+
+## Stage 9.12 — bounded RTF paragraph geometry
+
+`ParagraphStyleFormat` extends the existing Unicode-offset style-run contract
+with canonical `para-li_N`, `para-ri_N`, `para-fi_N`, and `para-tabs_...`
+identifiers. Signed `fi` and unsigned `li`/`ri` are bounded to 7200 twips;
+custom tab positions are strictly increasing, with at most 12 entries and
+alignment codes `L`, `C`, `R`, and `D`. These values are translated from twips
+to nominal 96-dpi pixels when GTK tags are constructed. RTF import/export keeps
+original twip values: rendering does not rewrite persistence data.
+
+The authoritative model is still the Unicode note content plus formatted style
+intervals. Paragraph metadata is scoped to the corresponding character range
+and never stored as a second tree, JSON property blob or schema column. The
+RTF importer recognizes a bounded declarative subset of `listtable` and
+`listoverridetable` in order to preserve common bullet/number identities and
+six-level depth in existing list tags. It does not infer unknown list kinds.
+
+`RichTextCodec` owns presentation tags and Pango tab placement. `NoteTransfer`
+owns bounded HTML attributes. Python RTF/RTFD tools own the external parser and
+serializer and never access GTK or execute embedded objects. Pre-v0.9.12 notes
+retain their existing formatting; applications without the new tokens may
+show text without these newer paragraph attributes. The SQLite version stays
+v7 and existing attachment identifiers and portable bundle manifests stay
+unchanged.

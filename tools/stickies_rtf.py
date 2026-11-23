@@ -9,6 +9,8 @@ and PDF attachments are deliberately not embedded or exported.
 from __future__ import annotations
 
 from contextlib import closing
+from collections import Counter
+import heapq
 
 import argparse
 import os
@@ -53,6 +55,26 @@ def _dynamic_style(style: str) -> bool:
     if style in {"list-bullet", "list-numbered", "list-checklist"} or style in {
         f"list-depth-{depth}" for depth in range(1, 7)
     }:
+        return True
+    metric = re.fullmatch(r"para-(li|ri|fi)_(-?[0-9]{1,4})", style)
+    if metric:
+        kind, raw = metric.groups()
+        amount = int(raw)
+        return (style == f"para-{kind}_{amount}" and -7200 <= amount <= 7200 and
+                (kind == "fi" or amount >= 0))
+    if style.startswith("para-tabs_"):
+        tab_tokens = style[10:].split("_")
+        if not 1 <= len(tab_tokens) <= 12:
+            return False
+        last_position = 0
+        for item in tab_tokens:
+            stop = re.fullmatch(r"([1-9][0-9]{0,3})([LRCD])", item)
+            if stop is None:
+                return False
+            position = int(stop.group(1))
+            if position <= last_position or position > 7200:
+                return False
+            last_position = position
         return True
     if re.fullmatch(r"point_([0-9]{1,2})", style):
         value = int(style[6:])
@@ -119,6 +141,98 @@ def _escape_rtf(text: str) -> str:
     return "".join(output)
 
 
+def _paragraph_controls(
+    content: str, spans: list[tuple[int, int, str]],
+) -> dict[int, str]:
+    """Recover bounded paragraph styles without inventing a second text model.
+
+    The RTF parser stores one valid style interval spanning each paragraph.
+    Export emits ``\\pard`` at every paragraph boundary so values cannot leak
+    into following paragraphs. A conflicting repeated metric is rejected.
+    """
+    if not any(style.startswith("para-") for _, _, style in spans):
+        return {}
+    records: dict[int, str] = {}
+    metadata = sorted(
+        (begin, end, style) for begin, end, style in spans
+        if style.startswith(("para-", "list-depth-"))
+    )
+    active_counts: Counter[str] = Counter()
+    expirations: list[tuple[int, str]] = []
+    next_span = 0
+    position = 0
+    for paragraph in content.split("\n"):
+        end = position + len(paragraph)
+        while expirations and expirations[0][0] <= position:
+            _, expired_style = heapq.heappop(expirations)
+            active_counts[expired_style] -= 1
+            if active_counts[expired_style] <= 0:
+                del active_counts[expired_style]
+        active = set(active_counts)
+        while next_span < len(metadata) and metadata[next_span][0] < end:
+            begin, finish, style = metadata[next_span]
+            next_span += 1
+            if finish > position:
+                active_counts[style] += 1
+                heapq.heappush(expirations, (finish, style))
+                active.add(style)
+        if len(active) > 32:
+            raise RtfExportError("Too many conflicting paragraph properties")
+        if active:
+            metrics: dict[str, int] = {}
+            tab_stops: list[tuple[int, str]] = []
+            depth: int | None = None
+            for style in active:
+                match = re.fullmatch(r"para-(li|ri|fi)_(-?[0-9]{1,4})", style)
+                if match:
+                    kind, raw = match.groups()
+                    value = int(raw)
+                    if (not -7200 <= value <= 7200 or
+                            (kind != "fi" and value < 0) or
+                            style != f"para-{kind}_{value}"):
+                        raise RtfExportError("Invalid RTF paragraph metric")
+                    if kind in metrics and metrics[kind] != value:
+                        raise RtfExportError("Conflicting RTF paragraph metrics")
+                    metrics[kind] = value
+                elif style.startswith("para-tabs_"):
+                    parsed: list[tuple[int, str]] = []
+                    previous = 0
+                    for token in style[10:].split("_"):
+                        candidate = re.fullmatch(r"([1-9][0-9]{0,3})([LRCD])", token)
+                        if candidate is None:
+                            raise RtfExportError("Invalid RTF tab stops")
+                        number = int(candidate.group(1))
+                        if number <= previous or number > 7200 or len(parsed) >= 12:
+                            raise RtfExportError("Invalid RTF tab stops")
+                        parsed.append((number, candidate.group(2)))
+                        previous = number
+                    if tab_stops and tab_stops != parsed:
+                        raise RtfExportError("Conflicting RTF tab stops")
+                    tab_stops = parsed
+                elif style.startswith("list-depth-"):
+                    item_depth = int(style[11:])
+                    if depth is not None and item_depth != depth:
+                        raise RtfExportError("Conflicting RTF list levels")
+                    depth = item_depth
+            controls = [r"\pard "]
+            for kind in ("li", "ri", "fi"):
+                if kind in metrics:
+                    controls.append(rf"\{kind}{metrics[kind]} ")
+            for value, align in tab_stops:
+                controls.append({"L": r"\tql ", "C": r"\tqc ",
+                                 "R": r"\tqr ", "D": r"\tqdec "}[align])
+                controls.append(rf"\tx{value} ")
+            # A visible marker remains the source of list identity for older
+            # applications. RTF depth hints accompany it where present.
+            if depth is not None and 1 <= depth <= 6:
+                controls.append(rf"\ilvl{depth - 1} ")
+            records[position] = "".join(controls)
+        else:
+            records[position] = r"\pard "
+        position = end + 1
+    return records
+
+
 def make_rtf(
     title: str,
     content: str,
@@ -133,7 +247,8 @@ def make_rtf(
     for start, end, style in spans:
         boundaries.setdefault(start, []).append((style, True))
         boundaries.setdefault(end, []).append((style, False))
-    positions = sorted(set((0, len(content), *boundaries)))
+    paragraph_controls = _paragraph_controls(content, spans)
+    positions = sorted(set((0, len(content), *boundaries, *paragraph_controls)))
     active: dict[str, int] = {}
     styles = dict(STYLES)
     fonts = [r"{\f0\fswiss Arial;}", r"{\f1\froman Times New Roman;}",
@@ -176,7 +291,12 @@ def make_rtf(
         next_position = positions[index + 1]
         if next_position == position:
             continue
-        ordered = sorted(style for style, count in active.items() if count > 0)
+        ordered = sorted(
+            style for style, count in active.items()
+            if count > 0 and styles[style]
+        )
+        if position in paragraph_controls:
+            output.append(paragraph_controls[position])
         output.extend("{" + styles[style] for style in ordered)
         if graphic_positions:
             # Preserve linear memory behavior on large RTFD text. Split only

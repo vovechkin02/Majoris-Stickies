@@ -90,6 +90,54 @@ namespace Stickies {
             buffer.enable_undo = true;
         }
 
+        /** Applies bounded paragraph margins and tab stops to an editor-owned tag. */
+        private static void apply_paragraph_style (Gtk.TextTag tag, string style) {
+            string kind;
+            int twips;
+            if (ParagraphStyleFormat.parse_metric (style, out kind, out twips)) {
+                int pixels = ParagraphStyleFormat.to_pixels (twips);
+                switch (kind) {
+                    case "li":
+                        tag.left_margin = pixels;
+                        break;
+                    case "ri":
+                        tag.right_margin = pixels;
+                        break;
+                    case "fi":
+                        tag.indent = pixels;
+                        break;
+                }
+                return;
+            }
+            int[] positions;
+            string[] alignments;
+            if (!ParagraphStyleFormat.parse_tabs (
+                style, out positions, out alignments
+            )) {
+                return;
+            }
+            var tabs = new Pango.TabArray (positions.length, true);
+            for (int index = 0; index < positions.length; index++) {
+                Pango.TabAlign alignment = Pango.TabAlign.LEFT;
+                switch (alignments[index]) {
+                    case "R":
+                        alignment = Pango.TabAlign.RIGHT;
+                        break;
+                    case "C":
+                        alignment = Pango.TabAlign.CENTER;
+                        break;
+                    case "D":
+                        alignment = Pango.TabAlign.DECIMAL;
+                        break;
+                }
+                tabs.set_tab (
+                    index, alignment,
+                    ParagraphStyleFormat.to_pixels (positions[index])
+                );
+            }
+            tag.tabs = tabs;
+        }
+
         /** Loads plain text and style runs while the caller suppresses edit signals. */
         public static void load (Gtk.TextBuffer buffer, string text, string formatting) {
             buffer.text = text;
@@ -127,6 +175,8 @@ namespace Stickies {
                         pieces[2], out color
                     )) {
                         tag.foreground = "#" + color;
+                    } else {
+                        apply_paragraph_style (tag, pieces[2]);
                     }
                     buffer.tag_table.add (tag);
                 }
@@ -144,7 +194,8 @@ namespace Stickies {
                 names.add (built_in);
             }
             buffer.tag_table.@foreach ((tag) => {
-                if (tag.name != null && TextStyleFormat.supports (tag.name)) {
+                if (tag.name != null && (TextStyleFormat.supports (tag.name) ||
+                    ParagraphStyleFormat.supports (tag.name))) {
                     names.add (tag.name);
                 }
             });

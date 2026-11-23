@@ -113,6 +113,29 @@ def _style_supported(style: str) -> bool:
     }
     if style in fixed or RGB_STYLE.fullmatch(style):
         return True
+    # Match the editor/RTF exporter's canonical paragraph tokens. The
+    # values are checked independently here because the installed share
+    # worker must not depend on the optional RTF importer executable.
+    metric = re.fullmatch(r"para-(li|ri|fi)_(-?[0-9]{1,4})", style)
+    if metric:
+        kind, raw = metric.groups()
+        value = int(raw)
+        return (style == f"para-{kind}_{value}" and -7200 <= value <= 7200 and
+                (kind == "fi" or value >= 0))
+    if style.startswith("para-tabs_"):
+        tokens = style[10:].split("_")
+        if not 1 <= len(tokens) <= 12:
+            return False
+        last = 0
+        for token in tokens:
+            stop = re.fullmatch(r"([1-9][0-9]{0,3})([LRCD])", token)
+            if stop is None:
+                return False
+            position = int(stop.group(1))
+            if position <= last or position > 7200:
+                return False
+            last = position
+        return True
     image = INLINE_IMAGE.fullmatch(style)
     if image:
         width = int(image.group(2))

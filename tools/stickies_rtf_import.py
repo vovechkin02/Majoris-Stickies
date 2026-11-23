@@ -56,6 +56,8 @@ def _rtf_table(source: str, name: str) -> str:
     """Locate one bounded group, respecting escaped literal braces."""
     marker = "{" + "\\" + name
     start = source.find(marker)
+    if start < 0 and name in ("listtable", "listoverridetable"):
+        start = source.find("{" + "\\*\\" + name)
     if start < 0:
         return ""
     depth = 0
@@ -109,6 +111,66 @@ def _parse_font_table(source: str) -> dict[int, str]:
             result[index] = "font-serif"
         elif "\\fswiss" in definition:
             result[index] = "font-sans"
+    return result
+
+
+def _groups_by_control(table: str, control: str) -> list[str]:
+    """Extract bounded brace groups for exact control words, never evaluate them."""
+    groups: list[str] = []
+    marker = "{" + "\\" + control
+    for candidate in re.finditer(re.escape(marker) + r"(?=[\\ {])", table):
+        index = candidate.start()
+        depth = 0
+        while index < len(table):
+            char = table[index]
+            if char == "\\" and index + 1 < len(table) and table[index + 1] in "{}\\":
+                index += 2
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    groups.append(table[candidate.start():index + 1])
+                    break
+            index += 1
+        if len(groups) > MAX_TABLE_ENTRIES:
+            raise RtfImportError("RTF list metadata has too many entries")
+    return groups
+
+
+def _parse_list_kinds(source: str) -> dict[int, dict[int, str]]:
+    """Resolve common RTF list overrides and six bounded level-number formats.
+
+    It recognizes only declarative `listid`, `ls`, and `levelnfc` metadata. Any
+    complex bullet glyph, field, executable object, or stylesheet is ignored.
+    """
+    definitions: dict[int, dict[int, str]] = {}
+    table = _rtf_table(source, "listtable")
+    for group in _groups_by_control(table, "list"):
+        list_id = re.search(r"\\listid([0-9]{1,6})(?![0-9])", group)
+        if list_id is None:
+            continue
+        levels: dict[int, str] = {}
+        for index, level in enumerate(_groups_by_control(group, "listlevel")[:6]):
+            numbering = re.search(r"\\levelnfc([0-9]{1,3})(?![0-9])", level)
+            if numbering is None:
+                continue
+            value = int(numbering.group(1))
+            if value in (23, 255):
+                levels[index] = "list-bullet"
+            elif 0 <= value <= 5:
+                levels[index] = "list-numbered"
+        definitions[int(list_id.group(1))] = levels
+    overrides = _rtf_table(source, "listoverridetable")
+    result: dict[int, dict[int, str]] = {}
+    for group in _groups_by_control(overrides, "listoverride"):
+        identifier = re.search(r"\\listid([0-9]{1,6})(?![0-9])", group)
+        selector = re.search(r"\\ls([0-9]{1,6})(?![0-9])", group)
+        if identifier is not None and selector is not None:
+            values = definitions.get(int(identifier.group(1)))
+            if values is not None:
+                result[int(selector.group(1))] = values
     return result
 
 
@@ -166,6 +228,13 @@ class RtfReader:
         self.fonts: dict[int, str] = {}
         self.colors: dict[int, str] = {}
         self.legacy_codec = "cp1252"
+        self.paragraph_start = 0
+        self.paragraph_metrics: dict[str, int] = {}
+        self.paragraph_tabs: list[tuple[int, str]] = []
+        self.pending_tab_alignment = "L"
+        self.paragraph_list_id = 0
+        self.paragraph_list_level = 0
+        self.list_kinds: dict[int, dict[int, str]] = {}
 
     def _set_style(self, group: str, style: str | None) -> None:
         """Keep one active style per mutually exclusive formatting group."""
@@ -182,6 +251,60 @@ class RtfReader:
         self.styles.difference_update(STYLE_GROUPS[group])
         if style is not None:
             self.styles.add(style)
+
+    def _record_paragraph(self) -> None:
+        """Keep supported paragraph geometry on one current text interval."""
+        end = len(self.chars)
+        if end <= self.paragraph_start:
+            return
+        for kind in ("li", "ri", "fi"):
+            if kind in self.paragraph_metrics:
+                value = self.paragraph_metrics[kind]
+                self.spans.append((
+                    self.paragraph_start, end, f"para-{kind}_{value}",
+                ))
+        if self.paragraph_tabs:
+            tabs = "_".join(
+                f"{position}{alignment}"
+                for position, alignment in sorted(self.paragraph_tabs)
+            )
+            self.spans.append((
+                self.paragraph_start, end, "para-tabs_" + tabs,
+            ))
+        if self.paragraph_list_id > 0:
+            level = self.paragraph_list_level
+            if 0 <= level <= 5:
+                self.spans.append((
+                    self.paragraph_start, end, f"list-depth-{level + 1}",
+                ))
+            prefix = "".join(self.chars[self.paragraph_start:end]).lstrip()
+            if prefix.startswith(("• ", "· ")):
+                self.spans.append((
+                    self.paragraph_start, end, "list-bullet",
+                ))
+            elif re.match(r"[1-9][0-9]{0,5}\. ", prefix):
+                self.spans.append((
+                    self.paragraph_start, end, "list-numbered",
+                ))
+            else:
+                # Level metadata is deliberately resolved only from RTF's
+                # declared list tables, never an unknown \ls identifier.
+                list_kind = self.list_kinds.get(self.paragraph_list_id, {}).get(
+                    self.paragraph_list_level
+                )
+                if list_kind is not None:
+                    self.spans.append((
+                        self.paragraph_start, end, list_kind,
+                    ))
+        if len(self.spans) > MAX_SPANS:
+            raise RtfImportError("RTF contains too many formatting intervals")
+
+    def _end_paragraph(self) -> None:
+        """Commit properties before emitting a portable line separator."""
+        self._flush_high()
+        self._record_paragraph()
+        self._emit("\n")
+        self.paragraph_start = len(self.chars)
 
     def _append(self, char: str) -> None:
         """Emit one visible code point and record transitions at its offset."""
@@ -252,7 +375,35 @@ class RtfReader:
         if self.hidden:
             return
         if word in ("par", "line"):
-            self._emit("\n")
+            self._end_paragraph()
+        elif word == "pard":
+            self.paragraph_metrics.clear()
+            self.paragraph_tabs.clear()
+            self.pending_tab_alignment = "L"
+            self.paragraph_list_id = 0
+            self.paragraph_list_level = 0
+            self._set_style("alignment", None)
+        elif word in ("li", "ri", "fi") and value is not None:
+            if (not -7200 <= value <= 7200 or
+                    (word != "fi" and value < 0)):
+                raise RtfImportError("Unsupported paragraph indentation")
+            self.paragraph_metrics[word] = value
+        elif word in ("tql", "tqc", "tqr", "tqdec"):
+            self.pending_tab_alignment = {
+                "tql": "L", "tqc": "C", "tqr": "R", "tqdec": "D",
+            }[word]
+        elif word == "tx" and value is not None:
+            if (value <= 0 or value > 7200 or len(self.paragraph_tabs) >= 12 or
+                    any(position == value for position, _ in self.paragraph_tabs)):
+                raise RtfImportError("Unsupported RTF tab stops")
+            self.paragraph_tabs.append((value, self.pending_tab_alignment))
+            self.pending_tab_alignment = "L"
+        elif word == "ls" and value is not None:
+            if value > 0 and value < 65536:
+                self.paragraph_list_id = value
+        elif word == "ilvl" and value is not None:
+            if 0 <= value <= 5:
+                self.paragraph_list_level = value
         elif word == "tab":
             self._emit("\t")
         elif word == "u" and value is not None:
@@ -297,8 +448,6 @@ class RtfReader:
             }.get(word))
         elif word == "plain":
             self.styles.clear()
-        elif word == "pard":
-            self._set_style("alignment", None)
 
     def parse(self, data: bytes) -> tuple[str, str]:
         """Convert an RTF document to plain text and app-owned style intervals."""
@@ -309,6 +458,7 @@ class RtfReader:
         source = data.decode("latin-1")
         self.fonts = _parse_font_table(source)
         self.colors = _parse_color_table(source)
+        self.list_kinds = _parse_list_kinds(source)
         index = 0
         optional_destination = False
         while index < len(source):
@@ -416,6 +566,7 @@ class RtfReader:
         if self.stack:
             raise RtfImportError("RTF document has unmatched groups")
         self._flush_high()
+        self._record_paragraph()
         for style, start in self.starts.items():
             self.spans.append((start, len(self.chars), style))
         if len(self.spans) > MAX_SPANS:

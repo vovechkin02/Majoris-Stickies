@@ -165,7 +165,8 @@ namespace Stickies {
                     }
                 }
             }
-            if (has_lists && paragraphs != null) {
+            if ((has_lists || note.formatting.contains (":para-")) &&
+                paragraphs != null) {
                 append_semantic_lists (
                     output, note.content, note.formatting, paragraphs,
                     embedded_images
@@ -224,6 +225,81 @@ namespace Stickies {
             }
         }
 
+        /** Converts validated paragraph metadata to bounded portable HTML attributes. */
+        private static string paragraph_attributes (
+            string formatting, int start, int end
+        ) {
+            int left = 0;
+            int right = 0;
+            int first = 0;
+            bool has_left = false;
+            bool has_right = false;
+            bool has_first = false;
+            string tab_stops = "";
+            foreach (var record in formatting.split ("\n")) {
+                if (record == "") {
+                    continue;
+                }
+                var fields = record.split (":");
+                if (fields.length != 3) {
+                    continue;
+                }
+                int begin;
+                int finish;
+                if (!int.try_parse (fields[0], out begin) ||
+                    !int.try_parse (fields[1], out finish) ||
+                    begin >= end || finish <= start) {
+                    continue;
+                }
+                string kind;
+                int twips;
+                if (ParagraphStyleFormat.parse_metric (
+                    fields[2], out kind, out twips
+                )) {
+                    if (kind == "li") {
+                        left = ParagraphStyleFormat.to_pixels (twips);
+                        has_left = true;
+                    } else if (kind == "ri") {
+                        right = ParagraphStyleFormat.to_pixels (twips);
+                        has_right = true;
+                    } else if (kind == "fi") {
+                        first = ParagraphStyleFormat.to_pixels (twips);
+                        has_first = true;
+                    }
+                } else {
+                    int[] positions;
+                    string[] alignments;
+                    if (ParagraphStyleFormat.parse_tabs (
+                        fields[2], out positions, out alignments
+                    )) {
+                        tab_stops = fields[2].substring (10);
+                    }
+                }
+            }
+            var attributes = new GLib.StringBuilder ();
+            if (has_left || has_right || has_first) {
+                attributes.append (" style=\"");
+                if (has_left) {
+                    attributes.append_printf ("margin-left:%dpx;", left);
+                }
+                if (has_right) {
+                    attributes.append_printf ("margin-right:%dpx;", right);
+                }
+                if (has_first) {
+                    attributes.append_printf ("text-indent:%dpx;", first);
+                }
+                attributes.append ("\"");
+            }
+            if (tab_stops != "") {
+                // HTML has no CSS equivalent for arbitrary RTF tab alignment.
+                // Preserve a safe hint for round-trip-aware consumers.
+                attributes.append (" data-note-tabs=\"");
+                attributes.append (tab_stops);
+                attributes.append ("\"");
+            }
+            return attributes.str;
+        }
+
         /** Emits real nested UL/OL/LI nodes from the existing stored list spans. */
         private static void append_semantic_lists (
             GLib.StringBuilder output, string content, string formatting,
@@ -235,7 +311,11 @@ namespace Stickies {
             foreach (var paragraph in paragraphs) {
                 if (paragraph.kind == "") {
                     close_semantic_lists (output, stack, open_items, 0);
-                    output.append ("<p>");
+                    output.append ("<p");
+                    output.append (paragraph_attributes (
+                        formatting, paragraph.start, paragraph.end
+                    ));
+                    output.append (">");
                 } else {
                     int target = paragraph.depth + 1;
                     if (target > stack.size + 1) {
@@ -257,7 +337,11 @@ namespace Stickies {
                         stack.add (paragraph.kind);
                     }
                     output.append (paragraph.checked_item ?
-                        "<li data-checked=\"true\">" : "<li>");
+                        "<li data-checked=\"true\"" : "<li");
+                    output.append (paragraph_attributes (
+                        formatting, paragraph.start, paragraph.end
+                    ));
+                    output.append (">");
                     open_items[stack.size - 1] = true;
                 }
                 int first_byte = paragraph.body_start == content.char_count () ?

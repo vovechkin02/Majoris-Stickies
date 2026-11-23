@@ -1,3 +1,14 @@
+majoris-stickies (0.9.12-1) unstable; urgency=medium
+
+  * Preserve bounded RTF paragraph margins, first-line indent, and tab stops.
+  * Interpret common RTF list-table and override metadata without evaluating it.
+  * Retain paragraph formatting in GTK and semantic HTML clipboard output.
+  * Keep SQLite schema v7, native RTFD metadata, and legacy note formats stable.
+  * Add TextEdit fixture qualification tooling and focused interoperability tests.
+  * Native GTK and genuine macOS TextEdit round trips remain unqualified.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 16:29:00 +1100
+
 majoris-stickies (0.9.11-1) unstable; urgency=medium
 
   * Preserve supported custom font names, RGB colors, and point sizes from RTF.

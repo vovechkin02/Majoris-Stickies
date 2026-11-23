@@ -16,7 +16,8 @@ namespace Stickies {
             if (InlineImageFormat.parse (style, out attachment_id, out width_px)) {
                 return true;
             }
-            if (TextStyleFormat.supports (style)) {
+            if (TextStyleFormat.supports (style) ||
+                ParagraphStyleFormat.supports (style)) {
                 return true;
             }
             switch (style) {

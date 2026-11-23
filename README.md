@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.11 (richer RTF styles and macOS RTFD safety; native gate pending)  
+**Version:** 0.9.12 (RTF paragraph geometry and bounded RTFD list metadata; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,34 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.12 — Paragraph geometry and list-table compatibility
+
+- **RTF paragraph styles:** Import and export bounded left/right margins
+  (`\li`, `\ri`), signed first-line indentation (`\fi`), and up to 12
+  custom tab stops (`\tx`) including left, center, right and decimal tab
+  alignment. Values are expressed in canonical RTF twips and translated to
+  GTK/Pango paragraph tags at the presentation boundary.
+- **RTF list metadata:** Resolve common declarative `listtable`, `listid`,
+  `listoverridetable`, `ls`, `levelnfc` and `ilvl` constructs into the existing
+  semantic list-kind and depth spans. This does not execute RTF instructions,
+  reimplement Word's complete numbering engine or create a second document tree.
+- **HTML clipboard:** Emit bounded margin and first-indent styles for rich
+  paragraphs and list items. Custom tab stops are preserved in a safe
+  `data-note-tabs` attribute because HTML lacks exact RTF tab alignment.
+- **RTFD parity:** The same RTF paragraph styles survive directory-package
+  interchange, Apple inline-graphic conversion and lossless Majoris metadata.
+- **Compatibility:** SQLite schema v7 and the existing `start:end:style` wire
+  format are unchanged. Old notes keep their previous style tokens; new
+  `para-*` tokens are recognized by v0.9.12 and may be ignored by older apps.
+  These features are an explicitly supported subset of RTF, not arbitrary
+  macOS `NSParagraphStyle` or `NSFileWrapper` compatibility.
+- **Qualification:** The new offline suites include RTF/RTFD round trips,
+  list-table metadata, invalid tab/margin controls, Unicode image offsets and
+  a read-only fixture inspector for real TextEdit output. No authentic macOS
+  TextEdit fixture was supplied or validated by this source-only build.
+
+See [`docs/stage-9-12-qualification.md`](docs/stage-9-12-qualification.md).
 
 ## v0.9.11 — Additional external document compatibility
 

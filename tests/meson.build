@@ -369,3 +369,22 @@ test(
          '-p', 'test_stage9_11_document_compat.py'],
   suite: 'integration',
 )
+
+# Stage 9.12: RTF paragraph geometry, tab stops, and list metadata.
+stage9_12_unit_executable = executable(
+  'test-stage9-12',
+  [core_sources, files('unit/test-stage9-12.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 9.12 paragraph tokens and HTML interoperability',
+  stage9_12_unit_executable, suite: 'unit')
+
+test(
+  'Stage 9.12 RTF paragraph and macOS RTFD compatibility',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage9_12_paragraph_interop.py'],
+  suite: 'integration',
+)

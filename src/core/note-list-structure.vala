@@ -173,7 +173,8 @@ namespace Stickies {
                     continue;
                 }
                 var fields = record.split (":");
-                if (fields.length != 3 || fields[2].has_prefix ("list-")) {
+                if (fields.length != 3 || fields[2].has_prefix ("list-") ||
+                    fields[2].has_prefix ("para-")) {
                     continue;
                 }
                 int begin = int.parse (fields[0]);

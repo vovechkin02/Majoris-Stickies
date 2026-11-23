@@ -4,6 +4,7 @@ core_sources = files(
   'core/note-formatting.vala',
   'core/note-list-structure.vala',
   'core/note-palette.vala',
+  'core/paragraph-style-format.vala',
   'core/note-repository.vala',
   'core/note-title.vala',
   'core/note-transfer.vala',
