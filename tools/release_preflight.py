@@ -75,6 +75,13 @@ def check_metadata(root: Path) -> list[str]:
         errors.append("Debian rules must be executable for dpkg-buildpackage")
     if not (root / "tools/stickies_auto_sync.py").stat().st_mode & stat.S_IXUSR:
         errors.append("The scheduled-sync worker must retain executable permissions")
+    if not (root / "tools/stickies_image_markup.py").stat().st_mode & stat.S_IXUSR:
+        errors.append("The image-markup helper must retain executable permissions")
+    helper_install = "majoris-stickies-image-markup"
+    if (helper_install not in meson or
+            "usr/bin/majoris-stickies-image-markup" not in
+            (root / "debian/majoris-stickies.install").read_text(encoding="utf-8")):
+        errors.append("The image-markup helper is missing from installed packages")
 
     control = (root / "debian/control").read_text(encoding="utf-8")
     if not all(phrase in control for phrase in (

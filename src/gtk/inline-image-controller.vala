@@ -160,7 +160,22 @@ namespace Stickies {
                 size_label.label = "%d px".printf (chosen_width);
                 changed ();
             });
+            var drag_handle = new Gtk.Label ("↔");
+            drag_handle.tooltip_text = "Drag horizontally to resize this image";
+            drag_handle.set_size_request (28, 28);
+            var resize_drag = new Gtk.GestureDrag ();
+            int starting_width_px = width_px;
+            resize_drag.drag_begin.connect ((x, y) => {
+                starting_width_px = (int) width_slider.get_value ();
+            });
+            resize_drag.drag_update.connect ((offset_x, offset_y) => {
+                int proposed = starting_width_px + (int) offset_x;
+                int snapped = InlineImageFormat.snap_width (proposed);
+                width_slider.set_value ((double) snapped);
+            });
+            drag_handle.add_controller (resize_drag);
             resize_controls.append (size_label);
+            resize_controls.append (drag_handle);
             resize_controls.append (width_slider);
             presentation.append (resize_controls);
             presentation.tooltip_text = attachment.display_name;

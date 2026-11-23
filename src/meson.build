@@ -14,6 +14,7 @@ core_sources = files(
 gtk_sources = files(
   'gtk/ink-canvas.vala',
   'gtk/inline-image-controller.vala',
+  'gtk/image-markup-editor.vala',
   'gtk/manager-window.vala',
   'gtk/note-window.vala',
   'gtk/note-paper-style.vala',
@@ -22,6 +23,7 @@ gtk_sources = files(
 )
 
 service_sources = files(
+  'services/image-markup-transfer.vala',
   'services/note-defaults.vala',
   'services/pdf-preview-service.vala',
   'services/pdf-text-service.vala',

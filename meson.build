@@ -2,7 +2,7 @@ project(
   'majoris-stickies',
   'vala',
   'c',
-  version: '0.9.6',
+  version: '0.9.7',
   meson_version: '>=1.1.0',
   default_options: ['warning_level=2'],
 )
@@ -92,6 +92,13 @@ install_data(
 )
 
 install_data(
+  'tools/stickies_image_markup.py',
+  install_dir: get_option('bindir'),
+  rename: 'majoris-stickies-image-markup',
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
   'tools/stickies_pdf_text.py',
   install_dir: get_option('bindir'),
   rename: 'majoris-stickies-pdf-text',
@@ -99,7 +106,7 @@ install_data(
 )
 
 summary({
-  'Stage': '9.6 paper colors and recurring reminders — native qualification pending',
+  'Stage': '9.7 source capture and non-destructive image markup — native qualification pending',
   'ImageKit': imagekit_dep.found(),
   'Spellcheck': spellcheck_dep.found() and sourceview_dep.found(),
   'Shell extension installed': get_option('shell_extension'),

@@ -292,3 +292,22 @@ test(
          '-p', 'test_stage9_6_features.py'],
   suite: 'integration',
 )
+
+# Stage 9.7: bounded direct image resizing and non-destructive markup.
+stage9_7_unit_executable = executable(
+  'test-stage9-7',
+  [core_sources, files('unit/test-stage9-7.vala')],
+  dependencies: unit_deps,
+  vala_args: ['--pkg=sqlite3'],
+)
+test('Stage 9.7 direct inline-image resize bounds',
+  stage9_7_unit_executable, suite: 'unit')
+
+test(
+  'Stage 9.7 safe raster markup and CLI',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage9_7_image_markup.py'],
+  suite: 'integration',
+)

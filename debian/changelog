@@ -1,3 +1,16 @@
+majoris-stickies (0.9.7-1) unstable; urgency=medium
+
+  * Restore executable permissions on Debian rules and scheduled-sync helper.
+  * Add drag-to-resize handles with bounded inline-image width snapping.
+  * Add explicit, validated clipboard website-source capture for notes.
+  * Add non-destructive annotated SVG copies of small raster attachments.
+  * Use Majoris Image for markup preview and retain the original image asset.
+  * Add strict markup validation, integration tests and release-preflight checks.
+  * Preserve SQLite schema v7, existing note identities and interchange formats.
+  * Native Vala, GTK/Wayland, ImageKit and Debian binary testing remain required.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 12:05:00 +1100
+
 majoris-stickies (0.9.6-1) unstable; urgency=medium
 
   * Add bounded custom pastel paper colors with manager filtering and sharing.

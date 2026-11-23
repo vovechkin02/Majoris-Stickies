@@ -69,3 +69,5 @@ jobs:
 
       - name: Notes-store session concurrency regression
         run: python3 -m unittest discover -s tests/integration -p 'test_store_session_lock.py'
+      - name: Raster markup security and format qualification
+        run: python3 -m unittest discover -s tests/integration -p 'test_stage9_7_image_markup.py' 

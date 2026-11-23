@@ -487,3 +487,26 @@ Manager cards update individually only when the result identity ordering and
 filter selection remain stable. Any structural change uses the existing
 bounded full rebuild. The repository remains in-memory for search pending
 measured performance evidence of an actual database bottleneck.
+
+
+## Stage 9.7 — scoped markup editing without new image decoders
+
+ImageKit remains the image viewer in both ordinary attachments and the new
+markup overlay. The `Gtk.Overlay` pen canvas is a transient UI-only layer.
+`ImageMarkupEditor` emits the existing `InkCanvas.to_svg()` numeric stroke
+format; `ImageMarkupTransfer` asks the small installed Python helper to
+validate those strokes and embed an existing, bounded raster as SVG `data:`
+bytes. `NoteRepository.attach_file` owns the resulting copy and metadata.
+PDF page markup uses a Poppler-rendered temporary PNG and the same interface,
+then deletes that preview on cancellation or completion. Neither source files
+nor existing attachments are edited. This is a visual preview annotation copy,
+not a native PDF annotation serializer. The 1 MiB raster and 128 KiB pen
+limits deliberately fail safely on larger sources. Format and source limits
+are validated in the helper without introducing an imaging decoder.
+
+Inline drag handles update the existing image width slider and its original
+serialized rich-text style tag through `InlineImageFormat.snap_width`; there
+is no additional persistent resize state. Source websites can be read from
+the clipboard only on explicit user action and pass through the existing
+`SourceLink` validator. These simple domain/GUI boundaries use normal
+GTK/GObject callbacks rather than gratuitous new GoF participants.

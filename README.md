@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.6 (custom paper colors and recurring reminders; native gate pending)  
+**Version:** 0.9.7 (non-destructive markup and source capture; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,30 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.7 — Inline resizing, source capture and media markup
+
+- **Direct resizing:** Drag the new inline-image resize handle horizontally.
+  Width changes stay on the original 96–960 px / 16 px grid, and the existing
+  slider remains keyboard-accessible.
+- **Opt-in website source:** Choose **Use Clipboard URL as Source** in a note's
+  options. Stickies reads one URL only after this action, validates HTTP(S),
+  and saves it through the existing source-link field. It never watches other
+  browsers or records browsing activity automatically.
+- **Non-destructive image markup:** With Majoris Image installed, select a
+  small raster attachment and choose **Mark Up Image**. Draw over its ImageKit
+  preview and attach a separate bounded SVG copy; the original remains
+  untouched. SVG output only includes numeric pen strokes and embedded raster
+  bytes, with no scripts, file paths or remote references.
+- **PDF preview markup:** The PDF navigator can attach a visual markup copy
+  of the selected Poppler-rendered page. This does **not** create native PDF
+  annotation objects and does not modify the source PDF.
+- **Release maintenance:** Restored required executable permissions and added
+  offline security/format tests for the markup helper. SQLite schema v7 and
+  legacy note/bundle formats remain unchanged.
+
+See [`docs/stage-9-7-qualification.md`](docs/stage-9-7-qualification.md) for
+native verification requirements and outstanding advanced features.
 
 ## v0.9.6 — Custom paper colors and recurring reminders
 

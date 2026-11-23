@@ -381,6 +381,10 @@ namespace Stickies {
                 popover.popdown ();
                 edit_source_url ();
             });
+            menu_item (menu, "Use Clipboard URL as Source", () => {
+                popover.popdown ();
+                capture_clipboard_source_async.begin ();
+            });
             menu_item (menu, "Attach Screenshot…", () => {
                 popover.popdown ();
                 owner.capture_screenshot (note.id);
@@ -833,6 +837,30 @@ namespace Stickies {
                 }
             });
             dialog.present (this);
+        }
+
+        /** Saves an explicitly requested clipboard URL without inspecting browsers. */
+        private async void capture_clipboard_source_async () {
+            try {
+                var text = yield get_clipboard ().read_text_async (
+                    attachment_cancellable
+                );
+                if (text == null || text.strip () == "") {
+                    show_status ("Clipboard does not contain a website URL");
+                    return;
+                }
+                var normalized = SourceLink.normalize (text);
+                if (normalized == "") {
+                    show_status ("Clipboard does not contain a website URL");
+                    return;
+                }
+                repository.set_source_url (note.id, normalized);
+                show_status ("Source website saved from clipboard");
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Clipboard source rejected: " + error.message);
+            }
         }
 
         /** Opens only a previously validated HTTP(S) source in the default browser. */
@@ -1541,6 +1569,16 @@ namespace Stickies {
                         });
                         row.append (copy_page);
                     }
+#if HAVE_IMAGEKIT
+                    if (is_markup_raster (attachment)) {
+                        var markup_button = new Gtk.Button.with_label ("Mark Up");
+                        markup_button.tooltip_text = "Mark Up Image (Keeps Original)";
+                        markup_button.clicked.connect (() => {
+                            open_image_markup (attachment);
+                        });
+                        row.append (markup_button);
+                    }
+#endif
                     attachments_box.append (row);
 #if HAVE_IMAGEKIT
                     if (attachment.is_image () || attachment.mime_type == "application/pdf") {
@@ -1581,6 +1619,9 @@ namespace Stickies {
                             var copy_text = new Gtk.Button.with_label ("Copy Page Text");
                             copy_text.tooltip_text = "Copy text from the displayed PDF page";
                             navigation.append (copy_text);
+                            var markup_page = new Gtk.Button.with_label ("Mark Up Page");
+                            markup_page.tooltip_text = "Attach an annotated preview copy";
+                            navigation.append (markup_page);
                             layout.append (navigation);
                             layout.append (viewer);
                             expander.set_child (layout);
@@ -1590,6 +1631,11 @@ namespace Stickies {
                             copy_text.clicked.connect (() => {
                                 if (shown_page >= 1 && !loading_page) {
                                     copy_pdf_page_text.begin (attachment, shown_page);
+                                }
+                            });
+                            markup_page.clicked.connect (() => {
+                                if (shown_page >= 1 && !loading_page) {
+                                    open_pdf_page_markup_async.begin (attachment, shown_page);
                                 }
                             });
                             previous.clicked.connect (() => {
@@ -1754,6 +1800,111 @@ namespace Stickies {
                 }
             }
         }
+
+#if HAVE_IMAGEKIT
+        /** Opens a non-destructive pen overlay for a Poppler-rendered PDF page. */
+        private async void open_pdf_page_markup_async (
+            NoteAttachment attachment, int page
+        ) {
+            try {
+                var preview = yield PdfPreviewService.render_page_scaled (
+                    GLib.File.new_for_path (attachment.path), page, 640,
+                    attachment_cancellable
+                );
+                if (attachment_cancellable.is_cancelled ()) {
+                    PdfPreviewService.delete_preview (preview);
+                    return;
+                }
+                var local_path = preview.get_path ();
+                if (local_path == null) {
+                    PdfPreviewService.delete_preview (preview);
+                    return;
+                }
+                bool saving = false;
+                var editor = new ImageMarkupEditor (
+                    this, local_path, attachment_cancellable
+                );
+                editor.markup_requested.connect ((svg) => {
+                    saving = true;
+                    attach_pdf_page_markup_async.begin (attachment, preview, page, svg);
+                });
+                editor.close_request.connect (() => {
+                    if (!saving) {
+                        PdfPreviewService.delete_preview (preview);
+                    }
+                    return false;
+                });
+                editor.present ();
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not mark up PDF preview: " + error.message);
+            }
+        }
+
+        /** Attaches an SVG sketch of one PDF page without changing its PDF. */
+        private async void attach_pdf_page_markup_async (
+            NoteAttachment original, GLib.File preview, int page, string svg
+        ) {
+            try {
+                var local_path = preview.get_path ();
+                if (local_path == null) {
+                    throw new IOError.NOT_SUPPORTED ("PDF markup requires a local preview");
+                }
+                var rendered = new NoteAttachment (
+                    original.id, original.note_id,
+                    "%s — page %d".printf (original.display_name, page),
+                    "image/png", local_path
+                );
+                yield ImageMarkupTransfer.attach (
+                    repository, note.id, rendered, svg, attachment_cancellable
+                );
+                save_label.label = "Annotated PDF preview attached; PDF preserved";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not mark up PDF page: " + error.message);
+            } finally {
+                PdfPreviewService.delete_preview (preview);
+            }
+        }
+
+        /** Restricts ink overlays to compact raster images, never active SVG assets. */
+        private static bool is_markup_raster (NoteAttachment attachment) {
+            return attachment.mime_type == "image/png" ||
+                attachment.mime_type == "image/jpeg" ||
+                attachment.mime_type == "image/gif" ||
+                attachment.mime_type == "image/webp";
+        }
+
+        /** Opens a scoped ink editor without modifying the selected attachment. */
+        private void open_image_markup (NoteAttachment attachment) {
+            var editor = new ImageMarkupEditor (
+                this, attachment.path, attachment_cancellable
+            );
+            editor.markup_requested.connect ((svg) => {
+                attach_image_markup_async.begin (attachment, svg);
+            });
+            editor.present ();
+        }
+
+        /** Attaches a separate annotated SVG copy through the interchange service. */
+        private async void attach_image_markup_async (
+            NoteAttachment attachment, string native_ink_svg
+        ) {
+            try {
+                yield ImageMarkupTransfer.attach (
+                    repository, note.id, attachment, native_ink_svg,
+                    attachment_cancellable
+                );
+                save_label.label = "Marked-up copy attached; original preserved";
+            } catch (IOError.CANCELLED error) {
+                return;
+            } catch (Error error) {
+                show_save_failure ("Could not mark up image: " + error.message);
+            }
+        }
+#endif
 
         /** Opens the original copy in the user's default external application. */
         private void open_attachment (NoteAttachment attachment) {

@@ -73,6 +73,17 @@ namespace Stickies {
             return output.str;
         }
 
+        /** Snaps a pointer-resize request to the existing 16-pixel image grid. */
+        public static int snap_width (int requested_width_px) {
+            int bounded = requested_width_px;
+            if (bounded < 96) {
+                bounded = 96;
+            } else if (bounded > 960) {
+                bounded = 960;
+            }
+            return ((bounded + 8) / 16) * 16;
+        }
+
         /** Bounds image dimensions to the 16-pixel Majoris spacing scale. */
         public static bool is_supported_width (int width_px) {
             return width_px >= 96 && width_px <= 960 && width_px % 16 == 0;
