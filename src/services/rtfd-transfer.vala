@@ -86,6 +86,18 @@ namespace Stickies {
                 }
                 foreach (var info in batch) {
                     var name = info.get_name ();
+                    // Finder and archive tools can add AppleDouble sidecars.
+                    // They contain resource-fork metadata, never note assets;
+                    // the installed RTFD helper validates exact sibling names.
+                    if (name == ".DS_Store" || name.has_prefix ("._")) {
+                        if (info.get_file_type () != GLib.FileType.REGULAR ||
+                            info.get_size () < 0 || info.get_size () > 1024 * 1024) {
+                            throw new IOError.INVALID_DATA (
+                                "RTFD contains unsafe Apple filesystem metadata"
+                            );
+                        }
+                        continue;
+                    }
                     if (name == "TXT.rtf" || name == "majoris.json") {
                         if (info.get_file_type () != GLib.FileType.REGULAR ||
                             (name == "majoris.json" && info.get_size () > 8 * 1024 * 1024)) {

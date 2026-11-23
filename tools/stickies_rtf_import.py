@@ -15,6 +15,7 @@ import re
 import stat
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 MAX_INPUT_BYTES = 16 * 1024 * 1024
 MAX_OUTPUT_BYTES = 2 * 1024 * 1024
@@ -87,14 +88,26 @@ def _parse_font_table(source: str) -> dict[int, str]:
         index = int(raw_index)
         if index > 65535:
             continue
-        clean_name = re.sub(r"\\[a-zA-Z]+-?\d* ?", "", definition).strip().lower()
-        if ("\\fmodern" in definition or
-                any(label in clean_name for label in ("mono", "courier", "consolas", "menlo"))):
-            result[index] = "font-monospace"
-        elif ("\\froman" in definition or
-              any(label in clean_name for label in ("serif", "times", "georgia", "garamond"))):
+        # Preserve declared font families rather than collapsing every family
+        # to serif/sans/monospace. Keep the historical token for the three
+        # standard export fonts so older imports stay byte-for-byte stable.
+        clean_name = re.sub(r"\\[a-zA-Z]+-?\d* ?", "", definition).strip()
+        lower_name = clean_name.lower()
+        if lower_name in {"arial", "helvetica"}:
+            result[index] = "font-sans"
+        elif lower_name in {"times new roman", "times"}:
             result[index] = "font-serif"
-        elif "\\fswiss" in definition or clean_name:
+        elif lower_name in {"courier new", "courier"}:
+            result[index] = "font-monospace"
+        elif (clean_name and len(clean_name.encode("utf-8")) <= 96 and
+              all(ord(character) >= 32 and ord(character) != 127 and
+                  character not in ":\\" for character in clean_name)):
+            result[index] = "face_" + quote(clean_name, safe="")
+        elif "\\fmodern" in definition:
+            result[index] = "font-monospace"
+        elif "\\froman" in definition:
+            result[index] = "font-serif"
+        elif "\\fswiss" in definition:
             result[index] = "font-sans"
     return result
 
@@ -115,13 +128,18 @@ def _parse_color_table(source: str) -> dict[int, str]:
         if len(channels) != 3 or any(value > 255 for value in channels.values()):
             continue
         rgb = (channels["red"], channels["green"], channels["blue"])
-        style, distance = min(
-            ((name, sum((a - b) ** 2 for a, b in zip(rgb, color)))
-             for name, color in KNOWN_COLORS.items()),
-            key=lambda item: item[1],
+        known = next(
+            (name for name, known_rgb in KNOWN_COLORS.items() if known_rgb == rgb),
+            None,
         )
-        if distance <= 115 ** 2:
-            result[index] = style
+        legacy_aliases = {
+            (255, 0, 0): "text-red", (0, 0, 255): "text-blue",
+            (0, 128, 0): "text-green",
+        }
+        result[index] = (
+            known or legacy_aliases.get(rgb) or
+            "rgb_" + "".join(f"{value:02x}" for value in rgb)
+        )
     return result
 
 
@@ -138,17 +156,29 @@ class RtfReader:
         self.styles: set[str] = set()
         self.starts: dict[str, int] = {}
         self.spans: list[tuple[int, int, str]] = []
-        self.stack: list[tuple[set[str], bool, int]] = []
+        self.stack: list[tuple[set[str], bool, int, bool]] = []
         self.hidden = False
+        self.in_list_marker = False
         self.uc = 1
         self.fallback = 0
         self.pending_high: int | None = None
         self.output_bytes = 0
         self.fonts: dict[int, str] = {}
         self.colors: dict[int, str] = {}
+        self.legacy_codec = "cp1252"
 
     def _set_style(self, group: str, style: str | None) -> None:
         """Keep one active style per mutually exclusive formatting group."""
+        # Dynamic face/rgb/point tokens belong to the same exclusive groups
+        # as the earlier fixed palette and must not accumulate across runs.
+        dynamic_prefix = {
+            "family": "face_", "color": "rgb_", "size": "point_",
+        }.get(group)
+        if dynamic_prefix is not None:
+            self.styles = {
+                item for item in self.styles
+                if not item.startswith(dynamic_prefix)
+            }
         self.styles.difference_update(STYLE_GROUPS[group])
         if style is not None:
             self.styles.add(style)
@@ -184,6 +214,14 @@ class RtfReader:
             self.fallback -= 1
             return
         self._flush_high()
+        # Apple TextEdit and Word commonly use a listtext/pntext group with
+        # a middle-dot marker and a tab. Convert that to portable list-marker
+        # text without evaluating the RTF list table or creating a second
+        # persistent document model.
+        if self.in_list_marker and char in ("·", "●", "◦"):
+            char = "•"
+        if self.in_list_marker and char == "	":
+            char = " "
         self._append(char)
 
     def _emit_unicode(self, signed_unit: int) -> None:
@@ -221,6 +259,17 @@ class RtfReader:
             self._emit_unicode(value)
         elif word == "uc" and value is not None:
             self.uc = max(0, min(value, 4))
+        elif word == "mac":
+            self.legacy_codec = "mac_roman"
+        elif word == "ansi":
+            self.legacy_codec = "cp1252"
+        elif word == "ansicpg" and value is not None:
+            if value == 65001:
+                self.legacy_codec = "utf-8"
+            elif value == 10000:
+                self.legacy_codec = "mac_roman"
+            elif value == 1252:
+                self.legacy_codec = "cp1252"
         elif word in ("b", "i", "ul", "strike"):
             group, style = {
                 "b": ("bold", "bold"), "i": ("italic", "italic"),
@@ -233,9 +282,13 @@ class RtfReader:
         elif word == "f" and value is not None:
             self._set_style("family", self.fonts.get(value))
         elif word == "fs" and value is not None:
-            candidate = f"size-{value // 2}" if value % 2 == 0 else None
-            selected = candidate if candidate in STYLE_GROUPS["size"] else None
-            self._set_style("size", selected)
+            if value % 2 == 0 and 16 <= value <= 144:
+                points = value // 2
+                selected = (f"size-{points}" if f"size-{points}" in
+                            STYLE_GROUPS["size"] else f"point_{points}")
+                self._set_style("size", selected)
+            else:
+                self._set_style("size", None)
         elif word == "cf" and value is not None:
             self._set_style("color", self.colors.get(value))
         elif word in ("ql", "qc", "qr", "qj"):
@@ -265,14 +318,21 @@ class RtfReader:
             if char == "{":
                 if len(self.stack) >= MAX_DEPTH:
                     raise RtfImportError("RTF group depth exceeds 64")
-                self.stack.append((set(self.styles), self.hidden, self.uc))
+                self.stack.append((
+                    set(self.styles), self.hidden, self.uc, self.in_list_marker
+                ))
+                if (source[index + 1:].startswith("\\listtext") or
+                        source[index + 1:].startswith("\\pntext")):
+                    self.in_list_marker = True
                 optional_destination = False
                 index += 1
             elif char == "}":
                 if not self.stack:
                     raise RtfImportError("RTF contains an unmatched group terminator")
                 self._flush_high()
-                self.styles, self.hidden, self.uc = self.stack.pop()
+                (
+                    self.styles, self.hidden, self.uc, self.in_list_marker
+                ) = self.stack.pop()
                 optional_destination = False
                 index += 1
             elif char == "\\":
@@ -284,14 +344,22 @@ class RtfReader:
                     self._emit(symbol)
                     index += 1
                 elif symbol == "'":
-                    if index + 2 >= len(source):
-                        raise RtfImportError("RTF hex escape is incomplete")
-                    try:
-                        byte = int(source[index + 1:index + 3], 16)
-                    except ValueError as error:
-                        raise RtfImportError("RTF hex escape is invalid") from error
-                    self._emit(bytes([byte]).decode("cp1252", errors="replace"))
-                    index += 3
+                    # A single Unicode character can occupy multiple adjacent
+                    # RTF byte escapes when ansicpg65001 is selected.
+                    octets = bytearray()
+                    while True:
+                        if index + 2 >= len(source):
+                            raise RtfImportError("RTF hex escape is incomplete")
+                        try:
+                            octets.append(int(source[index + 1:index + 3], 16))
+                        except ValueError as error:
+                            raise RtfImportError("RTF hex escape is invalid") from error
+                        index += 3
+                        if source[index:index + 2] != "\\'":
+                            break
+                        index += 1
+                    for decoded in octets.decode(self.legacy_codec, errors="replace"):
+                        self._emit(decoded)
                 elif symbol == "*":
                     optional_destination = True
                     index += 1
@@ -339,7 +407,9 @@ class RtfReader:
             else:
                 displayed = (
                     char if ord(char) < 128
-                    else bytes([ord(char)]).decode("cp1252", errors="replace")
+                    else bytes([ord(char)]).decode(
+                        self.legacy_codec, errors="replace"
+                    )
                 )
                 self._emit(displayed)
                 index += 1

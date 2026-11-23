@@ -57,6 +57,8 @@ NEXT_GRAPHIC = re.compile(
 )
 NEXT_GRAPHIC_PROPERTIES = re.compile(r"[ \t]+\\(?:width|height|apple[a-z]+)-?[0-9]*", re.I)
 MAX_RTF_GRAPHICS = 32
+MAX_APPLE_METADATA_FILES = MAX_ATTACHMENTS + 3
+MAX_APPLE_METADATA_BYTES = 1024 * 1024
 MIME_SUFFIXES = {
     "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
     "image/tiff": ".tiff", "image/webp": ".webp", "image/bmp": ".bmp",
@@ -224,35 +226,82 @@ def _mime_for_asset(name: str) -> str | None:
 
 
 def _next_graphic_filename(header: str) -> tuple[str, int]:
-    """Decode an RTF-escaped UTF-8 sibling name and optional twip width."""
+    """Decode bounded, Unicode-safe Apple sibling names and optional twip width.
+
+    Accept RTF's normal backslash/brace escaping, UTF-8 hex bytes and Unicode
+    control words with one fallback character. Reject malformed UTF-16 pairs;
+    no filename is ever evaluated as a path beyond the verified package.
+    """
     property_match = NEXT_GRAPHIC_PROPERTIES.search(header)
     name_source = header[:property_match.start()] if property_match else header
+    fragments: list[str] = []
     raw = bytearray()
+    pending_high: int | None = None
+
+    def append_raw() -> None:
+        """Decode one complete UTF-8 run without accepting malformed bytes."""
+        if raw:
+            try:
+                fragments.append(raw.decode("utf-8", errors="strict"))
+            except UnicodeError as error:
+                raise RtfdError("Invalid UTF-8 Apple graphic filename") from error
+            raw.clear()
+
     index = 0
     while index < len(name_source):
         char = name_source[index]
-        if char == "\\":
-            if index + 1 >= len(name_source):
-                raise RtfdError("Truncated Apple graphic filename escape")
-            next_char = name_source[index + 1]
-            if next_char in "{}\\":
-                raw.extend(next_char.encode("latin-1"))
-                index += 2
-            elif next_char == "'" and index + 3 < len(name_source):
-                try:
-                    raw.append(int(name_source[index + 2:index + 4], 16))
-                except ValueError as error:
-                    raise RtfdError("Invalid Apple graphic filename escape") from error
-                index += 4
-            else:
-                raise RtfdError("Unsupported Apple graphic filename escape")
-        else:
+        if char != "\\":
+            if pending_high is not None:
+                raise RtfdError("Unpaired Apple graphic Unicode surrogate")
             raw.extend(char.encode("latin-1"))
             index += 1
-    try:
-        filename = raw.decode("utf-8", errors="strict").strip()
-    except UnicodeError as error:
-        raise RtfdError("Invalid UTF-8 Apple graphic filename") from error
+            continue
+        if index + 1 >= len(name_source):
+            raise RtfdError("Truncated Apple graphic filename escape")
+        escaped = name_source[index + 1]
+        if escaped in "{}\\":
+            if pending_high is not None:
+                raise RtfdError("Unpaired Apple graphic Unicode surrogate")
+            raw.extend(escaped.encode("latin-1"))
+            index += 2
+        elif escaped == "'" and index + 3 < len(name_source):
+            if pending_high is not None:
+                raise RtfdError("Unpaired Apple graphic Unicode surrogate")
+            try:
+                raw.append(int(name_source[index + 2:index + 4], 16))
+            except ValueError as error:
+                raise RtfdError("Invalid Apple graphic filename escape") from error
+            index += 4
+        elif escaped == "u":
+            # RTF Unicode escapes use signed UTF-16 values; the '?' is a
+            # single fallback byte for older RTF readers.
+            match = re.match(r"\\u(-?[0-9]{1,6})\?", name_source[index:])
+            if match is None:
+                raise RtfdError("Invalid Apple graphic Unicode escape")
+            append_raw()
+            unit = int(match.group(1)) & 0xFFFF
+            if 0xD800 <= unit <= 0xDBFF:
+                if pending_high is not None:
+                    raise RtfdError("Unpaired Apple graphic Unicode surrogate")
+                pending_high = unit
+            elif 0xDC00 <= unit <= 0xDFFF:
+                if pending_high is None:
+                    raise RtfdError("Unexpected Apple graphic Unicode surrogate")
+                fragments.append(chr(
+                    0x10000 + ((pending_high - 0xD800) << 10) + unit - 0xDC00
+                ))
+                pending_high = None
+            else:
+                if pending_high is not None:
+                    raise RtfdError("Unpaired Apple graphic Unicode surrogate")
+                fragments.append(chr(unit))
+            index += len(match.group(0))
+        else:
+            raise RtfdError("Unsupported Apple graphic filename escape")
+    if pending_high is not None:
+        raise RtfdError("Unpaired Apple graphic Unicode surrogate")
+    append_raw()
+    filename = "".join(fragments).strip()
     if _mime_for_asset(filename) is None:
         raise RtfdError("Apple graphic names must be safe sibling image filenames")
     width_match = re.search(r"\\width([0-9]{1,8})(?![0-9])", header)
@@ -261,6 +310,7 @@ def _next_graphic_filename(header: str) -> tuple[str, int]:
     width_px = min(960, max(96, (twips * 96 + 720) // 1440))
     width_px = min(960, max(96, ((width_px + 8) // 16) * 16))
     return filename, width_px
+
 
 
 def _external_note(
@@ -334,20 +384,38 @@ def inspect_package(source: Path) -> tuple[str, str, list[Path]]:
     if source.suffix.lower() != ".rtfd" or source.is_symlink() or not source.is_dir():
         raise RtfdError("Select a real .rtfd directory")
     names = list(source.iterdir())
-    if len(names) > MAX_ATTACHMENTS + 2:
+    if len(names) > MAX_ATTACHMENTS + MAX_APPLE_METADATA_FILES + 2:
         raise RtfdError("RTFD directory contains too many entries")
+    present = {path.name for path in names}
     rtf = source / "TXT.rtf"
-    if not rtf in names:
+    if rtf not in names:
         raise RtfdError("RTFD directory requires TXT.rtf")
     text, formatting = import_rtf(rtf)
     included: list[Path] = []
     total_bytes = _regular_file(rtf, MAX_PACKAGE_BYTES)
+    metadata_count = 0
     for path in sorted(names):
         if path.name == "TXT.rtf":
             continue
         if path.name == "majoris.json":
             total_bytes += _regular_file(path, MAX_MANIFEST_BYTES)
             _read_manifest(path)
+            continue
+        if path.name == ".DS_Store" or path.name.startswith("._"):
+            target = path.name[2:] if path.name.startswith("._") else ""
+            valid_target = (
+                not target or (
+                    target in present and
+                    (target in {"TXT.rtf", "majoris.json"} or
+                     _mime_for_asset(target) is not None)
+                )
+            )
+            if not valid_target or metadata_count >= MAX_APPLE_METADATA_FILES:
+                raise RtfdError("Untrusted Apple filesystem metadata")
+            metadata_count += 1
+            total_bytes += _regular_file(path, MAX_APPLE_METADATA_BYTES)
+            if total_bytes > MAX_PACKAGE_BYTES:
+                raise RtfdError("RTFD directory exceeds 128 MiB")
             continue
         mime = _mime_for_asset(path.name)
         if mime is None:

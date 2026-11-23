@@ -4,7 +4,7 @@ Native, local-first sticky notes for Majoris OS, built with Vala, GTK4, libadwai
 XML UI templates and SQLite. Stickies combines a centralized notes manager with
 independent note windows.
 
-**Version:** 0.9.10 (semantic lists and macOS RTFD interchange; native gate pending)  
+**Version:** 0.9.11 (richer RTF styles and macOS RTFD safety; native gate pending)  
 **Status:** Pre-release; native Vala compilation, GTK GUI, GNOME Shell integration,
 and Debian binaries remain unqualified in this packaging environment  
 **License:** GPL-3.0-or-later  
@@ -23,6 +23,27 @@ and Debian binaries remain unqualified in this packaging environment
 - [Security and reliability](#security-and-reliability)
 - [Testing and qualification](#testing-and-qualification)
 - [Contributing and license](#contributing-and-license)
+
+## v0.9.11 — Additional external document compatibility
+
+- **Paragraph and character styling:** RTF imports now preserve existing
+  paragraph-alignment tokens and bounded exact font-family, RGB foreground,
+  and point-size tokens instead of collapsing all custom styles into generic
+  presets. Existing legacy red/blue/green aliases remain compatible. AppKit
+  and Word-style bullet groups normalize to portable list markers.
+- **RTF character sets:** Bounded hexadecimal runs can decode declared UTF-8,
+  MacRoman and Windows-1252 RTF data. Unsupported object destinations remain
+  rejected or skipped; no embedded scripts or external URLs are evaluated.
+- **Apple RTFD packages:** Validate but ignore safe Finder `.DS_Store` and
+  AppleDouble sidecars; support UTF-16 `\u`-escaped graphic filenames in
+  addition to UTF-8 hex filename references. Original attachment bytes remain
+  in the existing managed store and file symlinks are still rejected.
+- **Semantics and compatibility:** SQLite schema v7, existing notes, portable
+  list markers, formatting tokens, and Majoris's native RTFD payload remain
+  unchanged. Derived paragraphs remain the authoritative interpretation of
+  stored text and spans; no conflicting second document tree is persisted.
+
+See [`docs/stage-9-11-qualification.md`](docs/stage-9-11-qualification.md).
 
 ## v0.9.10 — Semantic nested lists and external macOS RTFD
 

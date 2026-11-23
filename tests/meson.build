@@ -359,3 +359,13 @@ test(
          '-p', 'test_stage9_10_rtfd_compat.py'],
   suite: 'integration',
 )
+
+# Stage 9.11: preserved RTF style tokens and safer AppKit RTFD compatibility.
+test(
+  'Stage 9.11 rich RTF and macOS RTFD compatibility',
+  python,
+  args: ['-m', 'unittest', 'discover', '-s',
+         meson.project_source_root() / 'tests/integration',
+         '-p', 'test_stage9_11_document_compat.py'],
+  suite: 'integration',
+)

@@ -1,3 +1,15 @@
+majoris-stickies (0.9.11-1) unstable; urgency=medium
+
+  * Preserve supported custom font names, RGB colors, and point sizes from RTF.
+  * Decode bounded UTF-8 and MacRoman RTF byte escapes and list-marker groups.
+  * Accept safe AppleDouble and Finder sidecars without importing them as assets.
+  * Decode UTF-16 Apple graphic filenames with verified sibling references.
+  * Add focused interoperability and malformed-input regression coverage.
+  * Retain SQLite schema v7 and the derived semantic paragraph model.
+  * Native GTK and genuine macOS TextEdit round-trip qualification remain open.
+
+ -- Majoris OS Packaging Team <packaging@example.invalid>  Mon, 23 Nov 2026 13:08:00 +1100
+
 majoris-stickies (0.9.10-1) unstable; urgency=medium
 
   * Project existing list markers and tags into bounded semantic paragraphs.
